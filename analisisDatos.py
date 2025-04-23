@@ -5,14 +5,14 @@ import matplotlib.pyplot as plt
 try:
     df = pd.read_csv("seguimiento.csv", encoding="latin1", header=None, names=["Frame", "ID", "Zona"])
 except FileNotFoundError:
-    print("No se encontró el archivo 'seguimiento.csv'. Verificá el nombre o la ruta.")
+    print("No se encontró el archivo 'seguimiento_2.csv'. Verificá el nombre o la ruta.")
     exit()
 
 # Limpiar espacios en la columna "Zona"
 df["Zona"] = df["Zona"].str.strip()
 
-# Tomar solo la última zona en la que aparece cada ID
-df_ultima_zona = df.drop_duplicates(subset="ID", keep="last")
+# Eliminar zonas inválidas o vacías si las hubiera
+df = df[df["Zona"].notna() & (df["Zona"] != "")]
 
 # Mapear nombres para mostrar como querés
 mapeo_zonas = {
@@ -21,14 +21,22 @@ mapeo_zonas = {
     "Centro-Derecha": "Centro Derecha",
     "Derecha": "Derecha"
 }
-df_ultima_zona["Zona"] = df_ultima_zona["Zona"].map(mapeo_zonas)
+df["Zona"] = df["Zona"].map(mapeo_zonas)
 
-# Definir orden de zonas y contar
-zonas_ordenadas = ["Izquierda", "Centro Izquierda", "Centro Derecha", "Derecha"]
-conteo = df_ultima_zona["Zona"].value_counts().reindex(zonas_ordenadas, fill_value=0)
+# Eliminar filas con zonas no reconocidas
+df = df[df["Zona"].notna()]
+
+# Eliminar duplicados de combinaciones ID-Zona (cuenta solo una vez por zona por ID)
+df_sin_duplicados = df.drop_duplicates(subset=["ID", "Zona"])
+
+# Contar cuántos IDs únicos hay por zona
+conteo = df_sin_duplicados["Zona"].value_counts().reindex(
+    ["Izquierda", "Centro Izquierda", "Centro Derecha", "Derecha"],
+    fill_value=0
+)
 
 # Mostrar resultados
-print("Número de personas en cada zona (último registro por ID):")
+print("Número de personas únicas por zona (sin repetir por zona por ID):")
 for zona, cantidad in conteo.items():
     print(f"{zona}: {cantidad} personas")
 

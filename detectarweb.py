@@ -2,7 +2,10 @@ import cv2
 import torch
 import numpy as np
 import requests
-import csv  # Importante para guardar los datos
+import csv
+import os  
+import warnings
+warnings.filterwarnings("ignore", message=".*autocast.*")
 
 # Variables globales
 seguido_id = None
@@ -11,18 +14,18 @@ siguiente_id = 0
 candidatos = {}
 posiciones_iniciales = {}
 posiciones_finales = {}
-seguimiento_log = []  # Lista para registrar las zonas por frame
+seguimiento_log = []
 
 def click(event, x, y, flags, param):
     global clic_pos, seguido_id, candidatos
     if event == cv2.EVENT_LBUTTONDOWN:
         clic_pos = (x, y)
-        print(f"Click en posición: {clic_pos}")
+        #print(f"Click en posición: {clic_pos}")
         for idv, (centro, x1, y1, w, h) in candidatos.items():
-            print(f"Chequeando ID {idv} en zona: ({x1}, {y1}, {x1+w}, {y1+h})")
+            #print(f"Chequeando ID {idv} en zona: ({x1}, {y1}, {x1+w}, {y1+h})")
             if x1 < x < x1 + w and y1 < y < y1 + h:
                 seguido_id = idv
-                print(f"Persona seleccionada: ID {idv}")
+                #print(f"Persona seleccionada: ID {idv}")
                 break
 
 # Cargar modelo YOLOv5
@@ -37,8 +40,20 @@ umbral_distancia = 50
 frames_perdido = 0
 max_frames_perdido = 30
 
-# Archivo salida
-out = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*'XVID'), 30, (int(cap.get(3)), int(cap.get(4))))
+# Generar nombres únicos para los archivos de salida
+def generar_nombre_unico(base, extension):
+    i = 1
+    nombre = f"{base}.{extension}"
+    while os.path.exists(nombre):
+        nombre = f"{base}_{i}.{extension}"
+        i += 1
+    return nombre
+
+video_filename = generar_nombre_unico("output", "avi")
+csv_filename = generar_nombre_unico("seguimiento", "csv")
+
+# Archivo salida de video
+out = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*'XVID'), 30, (int(cap.get(3)), int(cap.get(4))))
 
 def procesar_detecciones(imagen, model):
     results = model(imagen)
@@ -87,7 +102,7 @@ def procesar_frame(cap, model, candidatos, siguiente_id, seguido_id, frames_perd
 
     if seguido_id is None and len(visibles) > 0:
         seguido_id = visibles[0][0]
-        print(f"Seleccionando persona con ID {seguido_id} como seguida")
+        #print(f"Seleccionando persona con ID {seguido_id} como seguida")
 
     frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
     for idv, centro, x, y, w, h in visibles:
@@ -96,12 +111,12 @@ def procesar_frame(cap, model, candidatos, siguiente_id, seguido_id, frames_perd
             posiciones_iniciales[idv] = (centro[0], centro[1])
 
     if seguido_id is not None and seguido_id not in [v[0] for v in visibles]:
-        print(f"Persona con ID {seguido_id} no está visible. Cambiando a la última persona detectada.")
+        #print(f"Persona con ID {seguido_id} no está visible. Cambiando a la última persona detectada.")
         if len(posiciones_iniciales) > 0:
             for idv in reversed(list(posiciones_iniciales.keys())):
                 if idv != seguido_id:
                     seguido_id = idv
-                    print(f"Seleccionando persona con ID {seguido_id} como seguida")
+                    #print(f"Seleccionando persona con ID {seguido_id} como seguida")
                     break
 
     # Dibujar zonas
@@ -167,8 +182,8 @@ main_loop()
 cap.release()
 out.release()
 
-# Guardar el seguimiento en un archivo CSV
-with open("seguimiento.csv", "w", newline="") as f:
+# Guardar el seguimiento en un archivo CSV sin sobrescribir
+with open(csv_filename, "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow(["Frame", "ID", "Zona"])
     writer.writerows(seguimiento_log)
