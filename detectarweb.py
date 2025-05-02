@@ -1,46 +1,23 @@
+# track_script.py
 import cv2
 import torch
 import numpy as np
-import requests
 import csv
-import os  
+import os
 import warnings
+import argparse
+
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
-# Variables globales
-seguido_id = None
-clic_pos = None
-siguiente_id = 0
-candidatos = {}
-posiciones_iniciales = {}
-posiciones_finales = {}
-seguimiento_log = []
+# --- PARSER DE ARGUMENTOS ---
+parser = argparse.ArgumentParser(description="Person Tracker con YOLOv5")
+parser.add_argument("--camera", type=int, help="Índice de cámara a usar")
+parser.add_argument("--video", help="Archivo de video a procesar")
+parser.add_argument("--out-base", required=True, help="Base de nombre para archivos de salida")
+parser.add_argument("--no-boxes", action="store_true", help="Desactivar dibujo de bounding boxes")
+args = parser.parse_args()
 
-def click(event, x, y, flags, param):
-    global clic_pos, seguido_id, candidatos
-    if event == cv2.EVENT_LBUTTONDOWN:
-        clic_pos = (x, y)
-        #print(f"Click en posición: {clic_pos}")
-        for idv, (centro, x1, y1, w, h) in candidatos.items():
-            #print(f"Chequeando ID {idv} en zona: ({x1}, {y1}, {x1+w}, {y1+h})")
-            if x1 < x < x1 + w and y1 < y < y1 + h:
-                seguido_id = idv
-                #print(f"Persona seleccionada: ID {idv}")
-                break
-
-# Cargar modelo YOLOv5
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
-
-# Video
-cap = cv2.VideoCapture("video.mp4")
-cv2.namedWindow("Seguimiento de persona")
-cv2.setMouseCallback("Seguimiento de persona", click)
-
-umbral_distancia = 50
-frames_perdido = 0
-max_frames_perdido = 30
-
-# Generar nombres únicos para los archivos de salida
+# --- GENERAR NOMBRE ÚNICO ---
 def generar_nombre_unico(base, extension):
     i = 1
     nombre = f"{base}.{extension}"
@@ -49,141 +26,150 @@ def generar_nombre_unico(base, extension):
         i += 1
     return nombre
 
-video_filename = generar_nombre_unico("output", "avi")
-csv_filename = generar_nombre_unico("seguimiento", "csv")
+video_filename = generar_nombre_unico(args.out_base, "avi")
+csv_filename   = generar_nombre_unico("seguimiento", "csv")
 
-# Archivo salida de video
-out = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*'XVID'), 30, (int(cap.get(3)), int(cap.get(4))))
+# --- INICIALIZAR CAPTURA ---
+if args.camera is not None:
+    cap = cv2.VideoCapture(args.camera)
+else:
+    cap = cv2.VideoCapture(args.video)
 
-def procesar_detecciones(imagen, model):
+# --- VIDEO WRITER ---
+width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+fps    = cap.get(cv2.CAP_PROP_FPS) or 30.0
+fourcc = cv2.VideoWriter_fourcc(*'XVID')
+out    = cv2.VideoWriter(video_filename, fourcc, fps, (width, height))
+
+# --- CARGAR MODELO YOLOv5 ---
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
+
+# --- VARIABLES GLOBALES DE SEGUIMIENTO ---
+seguido_id = None
+siguiente_id = 0
+candidatos = {}
+posiciones_iniciales = {}
+posiciones_finales   = {}
+seguimiento_log = []
+
+# --- PARÁMETROS DE SEGUIMIENTO ---
+umbral_distancia    = 50
+max_frames_perdido  = 30
+
+# --- CALLBACK DE MOUSE ---
+def click(event, x, y, flags, param):
+    global seguido_id
+    if event == cv2.EVENT_LBUTTONDOWN:
+        for idv, (_centro, x1, y1, w, h) in candidatos.items():
+            if x1 < x < x1 + w and y1 < y < y1 + h:
+                seguido_id = idv
+                break
+
+cv2.namedWindow("Seguimiento de persona")
+cv2.setMouseCallback("Seguimiento de persona", click)
+
+# --- FUNCIONES AUXILIARES ---
+def procesar_detecciones(imagen):
     results = model(imagen)
     detecciones = results.xyxy[0].cpu().numpy()
-    nuevos_centros = []
-    for deteccion in detecciones:
-        confianza = deteccion[4]
-        clase = int(deteccion[5])
-        if clase == 0 and confianza > 0.5:
-            x1, y1, x2, y2 = deteccion[:4]
-            w, h = x2 - x1, y2 - y1
-            centro = (int(x1 + w // 2), int(y1 + h // 2))
-            nuevos_centros.append((centro, int(x1), int(y1), int(w), int(h)))
-    return nuevos_centros
+    output = []
+    for x1, y1, x2, y2, conf, cls in detecciones:
+        if int(cls)==0 and conf>0.5:
+            w, h = x2-x1, y2-y1
+            cx, cy = int(x1+w/2), int(y1+h/2)
+            output.append(( (cx,cy), int(x1), int(y1), int(w), int(h) ))
+    return output
 
-def asociar_detecciones(nuevos_centros, candidatos, siguiente_id):
+def asociar_detecciones(nuevos, umbral):
+    global siguiente_id
     visibles = []
     usados = set()
-    for centro, x, y, w, h in nuevos_centros:
-        mejor_id = None
-        mejor_distancia = float('inf')
-        for id_candidato, (centro_guardado, *_resto) in candidatos.items():
-            d = np.sqrt((centro[0] - centro_guardado[0])**2 + (centro[1] - centro_guardado[1])**2)
-            if d < mejor_distancia and d < umbral_distancia:
-                mejor_distancia = d
-                mejor_id = id_candidato
-
+    for centro, x, y, w, h in nuevos:
+        mejor_id, mejor_dist = None, float('inf')
+        for idc, (cent_ant, *_) in candidatos.items():
+            dist = np.hypot(centro[0]-cent_ant[0], centro[1]-cent_ant[1])
+            if dist<mejor_dist and dist<umbral:
+                mejor_dist, mejor_id = dist, idc
         if mejor_id is not None:
-            usados.add(mejor_id)
             candidatos[mejor_id] = (centro, x, y, w, h)
             visibles.append((mejor_id, centro, x, y, w, h))
         else:
             candidatos[siguiente_id] = (centro, x, y, w, h)
             visibles.append((siguiente_id, centro, x, y, w, h))
             siguiente_id += 1
+    return visibles
 
-    return visibles, siguiente_id
-
-def procesar_frame(cap, model, candidatos, siguiente_id, seguido_id, frames_perdido, clic_pos, out):
-    ret, imagen = cap.read()
+# --- BUCLE PRINCIPAL ---
+while True:
+    ret, frame = cap.read()
     if not ret:
-        return False, siguiente_id, seguido_id, frames_perdido, clic_pos
+        break
 
-    nuevos_centros = procesar_detecciones(imagen, model)
-    visibles, siguiente_id = asociar_detecciones(nuevos_centros, candidatos, siguiente_id)
+    nuevos_centros = procesar_detecciones(frame)
+    visibles = asociar_detecciones(nuevos_centros, umbral_distancia)
 
-    if seguido_id is None and len(visibles) > 0:
+    # Selección automática inicial
+    if seguido_id is None and visibles:
         seguido_id = visibles[0][0]
-        #print(f"Seleccionando persona con ID {seguido_id} como seguida")
 
-    frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+    # Actualizar posiciones
     for idv, centro, x, y, w, h in visibles:
-        posiciones_finales[idv] = (centro[0], centro[1])
-        if idv not in posiciones_iniciales:
-            posiciones_iniciales[idv] = (centro[0], centro[1])
+        posiciones_finales[idv] = centro
+        posiciones_iniciales.setdefault(idv, centro)
 
-    if seguido_id is not None and seguido_id not in [v[0] for v in visibles]:
-        #print(f"Persona con ID {seguido_id} no está visible. Cambiando a la última persona detectada.")
-        if len(posiciones_iniciales) > 0:
-            for idv in reversed(list(posiciones_iniciales.keys())):
-                if idv != seguido_id:
-                    seguido_id = idv
-                    #print(f"Seleccionando persona con ID {seguido_id} como seguida")
-                    break
+    # Si se pierde el seguido_id, cambiar a otro
+    if seguido_id not in [v[0] for v in visibles] and posiciones_iniciales:
+        for idv in reversed(list(posiciones_iniciales.keys())):
+            if idv!=seguido_id:
+                seguido_id = idv
+                break
 
-    # Dibujar zonas
-    ancho = imagen.shape[1]
-    alto = imagen.shape[0]
-    zona_w = ancho // 4
+    # Dibujar zonas de interés
+    h, w = frame.shape[:2]
+    zona_w = w//4
+    for i in range(1,4):
+        cv2.line(frame, (i*zona_w,0),(i*zona_w,h),(200,200,200),2)
+    overlay = frame.copy()
+    colores = [(0,0,255),(0,255,255),(0,255,0),(255,0,0)]
+    for i,col in enumerate(colores):
+        cv2.rectangle(overlay,(i*zona_w,0),((i+1)*zona_w,h),col,-1)
+    cv2.addWeighted(overlay,0.15,frame,0.85,0,frame)
+    etiquetas = ["Izquierda","Centro-Izq","Centro-Der","Derecha"]
+    for i,et in enumerate(etiquetas):
+        cv2.putText(frame, et, (i*zona_w + 10,30), cv2.FONT_HERSHEY_SIMPLEX,0.6,(50,50,50),2)
 
-    for i in range(1, 4):
-        x = i * zona_w
-        cv2.line(imagen, (x, 0), (x, alto), (200, 200, 200), 2)
+    # Dibujar bounding boxes si se desea
+    if not args.no_boxes:
+        for idv, centro, x, y, w_box, h_box in visibles:
+            color = (0,255,0) if idv==seguido_id else (255,0,0)
+            cv2.rectangle(frame, (x,y),(x+w_box,y+h_box), color,2)
+            cv2.putText(frame, f"ID:{idv}", (x,y-10), cv2.FONT_HERSHEY_SIMPLEX,0.6,color,2)
 
-    overlay = imagen.copy()
-    cv2.rectangle(overlay, (0, 0), (zona_w, alto), (0, 0, 255), -1)
-    cv2.rectangle(overlay, (zona_w, 0), (2 * zona_w, alto), (0, 255, 255), -1)
-    cv2.rectangle(overlay, (2 * zona_w, 0), (3 * zona_w, alto), (0, 255, 0), -1)
-    cv2.rectangle(overlay, (3 * zona_w, 0), (ancho, alto), (255, 0, 0), -1)
-    alpha = 0.15
-    cv2.addWeighted(overlay, alpha, imagen, 1 - alpha, 0, imagen)
-
-    cv2.putText(imagen, "Izquierda", (zona_w//4 - 30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 150), 2)
-    cv2.putText(imagen, "Centro-Izq", (zona_w + zona_w//4 - 40, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 150, 150), 2)
-    cv2.putText(imagen, "Centro-Der", (2 * zona_w + zona_w//4 - 45, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 150, 0), 2)
-    cv2.putText(imagen, "Derecha", (3 * zona_w + zona_w//4 - 30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (150, 0, 0), 2)
-
-    # Dibujar bounding boxes
-    for idv, centro, x, y, w, h in visibles:
-        color = (0, 255, 0) if idv == seguido_id else (255, 0, 0)
-        cv2.rectangle(imagen, (x, y), (x + w, y + h), color, 2)
-        cv2.putText(imagen, f"ID: {idv}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-    # Guardar zona del seguido_id si está visible
-    for idv, centro, x, y, w, h in visibles:
-        if idv == seguido_id:
-            x_centro = centro[0]
-            if x_centro < zona_w:
-                zona = "Izquierda"
-            elif x_centro < 2 * zona_w:
-                zona = "Centro-Izquierda"
-            elif x_centro < 3 * zona_w:
-                zona = "Centro-Derecha"
-            else:
-                zona = "Derecha"
+    # Registrar posición del seguido_id
+    for idv, centro, *_ in visibles:
+        if idv==seguido_id:
+            zona_idx = centro[0]//zona_w
+            zona = etiquetas[min(zona_idx,3)]
+            frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
             seguimiento_log.append((frame_num, idv, zona))
             break
 
-    out.write(imagen)
-    cv2.imshow("Seguimiento de persona", imagen)
+    out.write(frame)
+    cv2.imshow("Seguimiento de persona", frame)
+    if cv2.waitKey(1)&0xFF==ord('q'):
+        break
 
-    return True, siguiente_id, seguido_id, frames_perdido, clic_pos
-
-def main_loop():
-    global clic_pos, seguido_id, siguiente_id, frames_perdido
-    while True:
-        continuar, siguiente_id, seguido_id, frames_perdido, clic_pos = procesar_frame(
-            cap, model, candidatos, siguiente_id,
-            seguido_id, frames_perdido, clic_pos, out
-        )
-        if not continuar or cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-# Ejecutar
-main_loop()
+# --- LIMPIEZA ---
 cap.release()
 out.release()
+cv2.destroyAllWindows()
 
-# Guardar el seguimiento en un archivo CSV sin sobrescribir
+# --- GUARDAR CSV ---
 with open(csv_filename, "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["Frame", "ID", "Zona"])
-    writer.writerows(seguimiento_log)
+    w = csv.writer(f)
+    w.writerow(["Frame","ID","Zona"])
+    w.writerows(seguimiento_log)
+
+print(f"Video guardado en: {video_filename}")
+print(f"Log guardado en : {csv_filename}")
