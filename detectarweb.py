@@ -7,6 +7,7 @@ import argparse
 from ultralytics import YOLO
 from pyfirmata2 import Arduino
 import time
+import tkinter as tk
 
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
@@ -211,11 +212,40 @@ while True:
     if args.modo_rotativa and time.time() - last_detection_time > timeout:
         servo_x.write(baseX)
         servo_y.write(baseY)
+        servoPos[0] = baseX
+        servoPos[1] = baseY
     out.write(frame)
 
-    cv2.imshow("Seguimiento de persona", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break    
+    # Configurar resolución de pantalla
+    root = tk.Tk()
+    screen_w = root.winfo_screenwidth()
+    screen_h = root.winfo_screenheight()
+    root.destroy()
+
+    # Escalar manteniendo relación de aspecto
+    h, w = frame.shape[:2]
+    scale = min(screen_w / w, screen_h / h)
+    new_w, new_h = int(w * scale), int(h * scale)
+
+    # Redimensionar frame
+    resized_frame = cv2.resize(frame, (new_w, new_h))
+
+    # Crear canvas gris y centrar el frame
+    canvas = np.full((screen_h, screen_w, 3), 128, dtype=np.uint8)  # Gris
+    x_offset = (screen_w - new_w) // 2
+    y_offset = (screen_h - new_h) // 2
+    canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_frame
+
+    # Mostrar en pantalla completa
+    cv2.namedWindow("Seguimiento de persona", cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty("Seguimiento de persona", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    cv2.imshow("Seguimiento de persona", canvas)
+
+
+    #Salir con ESC
+    if cv2.waitKey(1) & 0xFF == 27:  # ESC para salir
+        break
+
 
 # --- LIMPIEZA ---
 if args.modo_rotativa:

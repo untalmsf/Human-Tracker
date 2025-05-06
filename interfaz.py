@@ -18,6 +18,7 @@ instalar_paquete("PIL")
 instalar_paquete("csv")
 instalar_paquete("ultralytics")
 instalar_paquete("cv2")
+instalar_paquete("tkinter")
 
 import os, subprocess, tkinter as tk
 from tkinter import filedialog, messagebox, ttk
