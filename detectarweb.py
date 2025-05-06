@@ -1,11 +1,13 @@
 import cv2
-import torch
 import numpy as np
 import csv
 import os
 import warnings
 import argparse
 from ultralytics import YOLO
+from pyfirmata2 import Arduino
+import time
+
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
@@ -15,7 +17,27 @@ parser.add_argument("--camera", type=int, help="Índice de cámara a usar")
 parser.add_argument("--video", help="Archivo de video a procesar")
 parser.add_argument("--out-base", required=True, help="Base de nombre para archivos de salida")
 parser.add_argument("--no-boxes", action="store_true", help="Desactivar dibujo de bounding boxes")
+parser.add_argument("--modo-rotativa", action="store_true")
+parser.add_argument("--com", type=str)
 args = parser.parse_args()
+baseX = 80
+baseY = 100
+servoPos = [baseX, baseY]
+last_detection_time = time.time()
+timeout = 5  # segundos
+
+if args.modo_rotativa:
+    try:
+        board = Arduino(args.com)
+        time.sleep(0.5)
+        servo_x = board.get_pin('d:9:s')
+        servo_y = board.get_pin('d:10:s')
+        servo_x.write(servoPos[0])
+        servo_y.write(servoPos[1])
+        time.sleep(0.5)
+
+    except Exception as e:
+        print("Error al mover servos a 90° al iniciar:", e)
 
 # --- GENERAR NOMBRE ÚNICO ---
 def generar_nombre_unico(base, extension):
@@ -102,6 +124,36 @@ def asociar_detecciones(nuevos, umbral):
             siguiente_id += 1
     return visibles
 
+def actualizar_servos(cx, cy):
+    global servoPos
+    frame_width, frame_height = 640, 480
+    center_x, center_y = frame_width // 2, frame_height // 2
+
+    # Error entre el centro del frame y el centro de la persona
+    error_x = center_x - cx  # Invertido: si está a la derecha, girar a la derecha
+    error_y = cy - center_y  # Si está abajo, mirar abajo
+
+    # Ganancia proporcional
+    Kp_x = 0.05  # Aumentá si querés giros más rápidos
+    Kp_y = 0.03
+
+    # Calcular cuánto mover cada servo
+    delta_x = Kp_x * error_x
+    delta_y = Kp_y * error_y
+
+    # Actualizar posición
+    servoPos[0] += delta_x
+    servoPos[1] += delta_y
+
+    # Limitar
+    servoPos[0] = np.clip(servoPos[0], 0, 180)
+    servoPos[1] = np.clip(servoPos[1], 75, 120)
+
+    # Escribir en servos
+    servo_x.write(servoPos[0])
+    servo_y.write(servoPos[1])
+
+
 # --- BUCLE PRINCIPAL ---
 while True:
     ret, frame = cap.read()
@@ -145,18 +197,29 @@ while True:
 
     for idv, centro, *_ in visibles:
         if idv == seguido_id:
+            last_detection_time = time.time()
             zona_idx = centro[0] // zona_w
             zona = etiquetas[min(zona_idx, 3)]
             frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
             seguimiento_log.append((frame_num, idv, zona))
-            break
 
+            if args.modo_rotativa:
+                actualizar_servos(*centro)
+            break
+        
+    # Si no se detecta al objetivo por más de 5 segundos se reinicia la posición de los servos
+    if args.modo_rotativa and time.time() - last_detection_time > timeout:
+        servo_x.write(baseX)
+        servo_y.write(baseY)
     out.write(frame)
+
     cv2.imshow("Seguimiento de persona", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        break    
 
 # --- LIMPIEZA ---
+if args.modo_rotativa:
+    board.exit()
 cap.release()
 out.release()
 cv2.destroyAllWindows()
