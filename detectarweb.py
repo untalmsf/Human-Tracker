@@ -7,12 +7,10 @@ import argparse
 from ultralytics import YOLO
 from pyfirmata2 import Arduino
 import time
-import tkinter as tk
-
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
-# --- PARSER DE ARGUMENTOS ---
+# ────────────────────── ARGUMENTOS CLI ──────────────────────
 parser = argparse.ArgumentParser(description="Person Tracker con YOLOv8")
 parser.add_argument("--camera", type=int, help="Índice de cámara a usar")
 parser.add_argument("--video", help="Archivo de video a procesar")
@@ -20,102 +18,91 @@ parser.add_argument("--out-base", required=True, help="Base de nombre para archi
 parser.add_argument("--no-boxes", action="store_true", help="Desactivar dibujo de bounding boxes")
 parser.add_argument("--modo-rotativa", action="store_true")
 parser.add_argument("--com", type=str)
+parser.add_argument("--resolution", type=str, default="640x480", help="Resolución WIDTHxHEIGHT")
+parser.add_argument("--fps", type=float, default=30.0, help="FPS deseados para la salida")
 args = parser.parse_args()
-baseX = 80
-baseY = 100
+
+# ────────────────── CONFIGURACIÓN GENERAL ──────────────────
+res_width, res_height = map(int, args.resolution.split("x"))
+fps = args.fps
+
+# Servos (sólo si usas la base rotativa)
+baseX, baseY = 80, 100
 servoPos = [baseX, baseY]
 last_detection_time = time.time()
-timeout = 5  # segundos
+timeout = 5  # segundos sin detección → servos a home
 
 if args.modo_rotativa:
     try:
         board = Arduino(args.com)
         time.sleep(0.5)
-        servo_x = board.get_pin('d:9:s')
-        servo_y = board.get_pin('d:10:s')
+        servo_x = board.get_pin("d:9:s")
+        servo_y = board.get_pin("d:10:s")
         servo_x.write(servoPos[0])
         servo_y.write(servoPos[1])
         time.sleep(0.5)
-
     except Exception as e:
-        print("Error al mover servos a 90° al iniciar:", e)
+        print("Error al inicializar servos:", e)
 
-# --- GENERAR NOMBRE ÚNICO ---
-def generar_nombre_unico(base, extension):
+# ─────────────────── NOMBRES DE ARCHIVO ────────────────────
+def nombre_unico(base, ext):
     i = 1
-    nombre = f"{base}.{extension}"
+    nombre = f"{base}.{ext}"
     while os.path.exists(nombre):
-        nombre = f"{base}_{i}.{extension}"
+        nombre = f"{base}_{i}.{ext}"
         i += 1
     return nombre
 
-video_filename = generar_nombre_unico(args.out_base, "avi")
-csv_filename   = generar_nombre_unico("seguimiento", "csv")
+video_filename = nombre_unico(args.out_base, "avi")
+csv_filename   = nombre_unico("seguimiento", "csv")
 
-# --- INICIALIZAR CAPTURA ---
+# ───────────────────── CAPTURA DE VIDEO ─────────────────────
 if args.camera is not None:
     cap = cv2.VideoCapture(args.camera)
+    # Forzar resolución y FPS en la cámara
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  res_width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res_height)
+    cap.set(cv2.CAP_PROP_FPS,          fps)
 else:
     cap = cv2.VideoCapture(args.video)
 
-# --- VIDEO WRITER ---
-width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-fps    = cap.get(cv2.CAP_PROP_FPS) or 30.0
-fourcc = cv2.VideoWriter_fourcc(*'XVID')
-out    = cv2.VideoWriter(video_filename, fourcc, fps, (width, height))
+# ───────────────────── VIDEO WRITER ────────────────────────
+fourcc = cv2.VideoWriter_fourcc(*"XVID")
+out    = cv2.VideoWriter(video_filename, fourcc, fps, (res_width, res_height))
 
-# --- CARGAR MODELO YOLOv8 ---
+# ───────────────────── MODELO YOLOv8 ───────────────────────
 model = YOLO("yolov8m.pt")
 
-# --- VARIABLES GLOBALES DE SEGUIMIENTO ---
+# ─────────────── VARIABLES DE SEGUIMIENTO ──────────────────
 seguido_id = None
 siguiente_id = 0
 candidatos = {}
-posiciones_iniciales = {}
-posiciones_finales   = {}
+pos_iniciales = {}
 seguimiento_log = []
 
-# --- PARÁMETROS DE SEGUIMIENTO ---
-umbral_distancia    = 50
-max_frames_perdido  = 30
+umbral_dist = 50  # pixeles
 
-# --- CALLBACK DE MOUSE ---
-def click(event, x, y, flags, param):
-    global seguido_id
-    if event == cv2.EVENT_LBUTTONDOWN:
-        for idv, (_centro, x1, y1, w, h) in candidatos.items():
-            if x1 < x < x1 + w and y1 < y1 + h:
-                seguido_id = idv
-                break
-
-cv2.namedWindow("Seguimiento de persona")
-cv2.setMouseCallback("Seguimiento de persona", click)
-
-# --- FUNCIONES AUXILIARES ---
-def procesar_detecciones(imagen):
-    results = model.predict(imagen, imgsz=640, conf=0.6, verbose=False)[0]
-    output = []
+# ───────────────── FUNCIONES AUXILIARES ────────────────────
+def procesar_detecciones(img):
+    results = model.predict(img, imgsz=640, conf=0.6, verbose=False)[0]
+    outs = []
     for box in results.boxes:
-        cls = int(box.cls[0])
-        conf = float(box.conf[0])
-        if cls == 0 and conf > 0.6:  # clase 0 = persona
+        if int(box.cls[0]) == 0 and float(box.conf[0]) > 0.6:  # persona
             x1, y1, x2, y2 = box.xyxy[0].tolist()
             w, h = x2 - x1, y2 - y1
             cx, cy = int(x1 + w / 2), int(y1 + h / 2)
-            output.append(((cx, cy), int(x1), int(y1), int(w), int(h)))
-    return output
+            outs.append(((cx, cy), int(x1), int(y1), int(w), int(h)))
+    return outs
 
-def asociar_detecciones(nuevos, umbral):
+def asociar(nuevos, umbral):
     global siguiente_id
     visibles = []
-    usados = set()
     for centro, x, y, w, h in nuevos:
-        mejor_id, mejor_dist = None, float('inf')
+        mejor_id, dist_min = None, float("inf")
         for idc, (cent_ant, *_) in candidatos.items():
-            dist = np.hypot(centro[0] - cent_ant[0], centro[1] - cent_ant[1])
-            if dist < mejor_dist and dist < umbral:
-                mejor_dist, mejor_id = dist, idc
+            dist = np.hypot(centro[0]-cent_ant[0], centro[1]-cent_ant[1])
+            if dist < dist_min and dist < umbral:
+                dist_min, mejor_id = dist, idc
         if mejor_id is not None:
             candidatos[mejor_id] = (centro, x, y, w, h)
             visibles.append((mejor_id, centro, x, y, w, h))
@@ -127,138 +114,76 @@ def asociar_detecciones(nuevos, umbral):
 
 def actualizar_servos(cx, cy):
     global servoPos
-    frame_width, frame_height = 640, 480
-    center_x, center_y = frame_width // 2, frame_height // 2
-
-    # Error entre el centro del frame y el centro de la persona
-    error_x = center_x - cx  # Invertido: si está a la derecha, girar a la derecha
-    error_y = cy - center_y  # Si está abajo, mirar abajo
-
-    # Ganancia proporcional
-    Kp_x = 0.05  # Aumentá si querés giros más rápidos
-    Kp_y = 0.03
-
-    # Calcular cuánto mover cada servo
-    delta_x = Kp_x * error_x
-    delta_y = Kp_y * error_y
-
-    # Actualizar posición
-    servoPos[0] += delta_x
-    servoPos[1] += delta_y
-
-    # Limitar
-    servoPos[0] = np.clip(servoPos[0], 0, 180)
-    servoPos[1] = np.clip(servoPos[1], 75, 120)
-
-    # Escribir en servos
+    frame_cx, frame_cy = res_width//2, res_height//2
+    err_x = frame_cx - cx
+    err_y = cy - frame_cy
+    Kp_x, Kp_y = 0.05, 0.03
+    servoPos[0] = np.clip(servoPos[0] + Kp_x*err_x, 0, 180)
+    servoPos[1] = np.clip(servoPos[1] + Kp_y*err_y, 75, 120)
     servo_x.write(servoPos[0])
     servo_y.write(servoPos[1])
 
-
-# --- BUCLE PRINCIPAL ---
+# ─────────────────────── BUCLE MAIN ────────────────────────
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
-    nuevos_centros = procesar_detecciones(frame)
-    visibles = asociar_detecciones(nuevos_centros, umbral_distancia)
+    # Si la fuente no coincide con la resolución deseada, re-escalar.
+    if frame.shape[1] != res_width or frame.shape[0] != res_height:
+        frame = cv2.resize(frame, (res_width, res_height))
+
+    nuevos = procesar_detecciones(frame)
+    visibles = asociar(nuevos, umbral_dist)
 
     if seguido_id is None and visibles:
         seguido_id = visibles[0][0]
 
-    for idv, centro, x, y, w, h in visibles:
-        posiciones_finales[idv] = centro
-        posiciones_iniciales.setdefault(idv, centro)
-
-    if seguido_id not in [v[0] for v in visibles] and posiciones_iniciales:
-        for idv in reversed(list(posiciones_iniciales.keys())):
-            if idv != seguido_id:
-                seguido_id = idv
-                break
-
-    h, w = frame.shape[:2]
-    zona_w = w // 4
-    for i in range(1, 4):
-        cv2.line(frame, (i * zona_w, 0), (i * zona_w, h), (200, 200, 200), 2)
-    overlay = frame.copy()
-    colores = [(0, 0, 255), (0, 255, 255), (0, 255, 0), (255, 0, 0)]
-    for i, col in enumerate(colores):
-        cv2.rectangle(overlay, (i * zona_w, 0), ((i + 1) * zona_w, h), col, -1)
-    cv2.addWeighted(overlay, 0.15, frame, 0.85, 0, frame)
+    zona_w = res_width // 4
     etiquetas = ["Izquierda", "Centro-Izq", "Centro-Der", "Derecha"]
-    for i, et in enumerate(etiquetas):
-        cv2.putText(frame, et, (i * zona_w + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (50, 50, 50), 2)
 
+    # Dibujar zonas
+    for i in range(1, 4):
+        cv2.line(frame, (i*zona_w, 0), (i*zona_w, res_height), (200,200,200), 2)
+
+    # Bounding boxes
     if not args.no_boxes:
-        for idv, centro, x, y, w_box, h_box in visibles:
-            color = (0, 255, 0) if idv == seguido_id else (255, 0, 0)
-            cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), color, 2)
-            cv2.putText(frame, f"ID:{idv}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        for idv, centro, x, y, w, h in visibles:
+            color = (0,255,0) if idv == seguido_id else (255,0,0)
+            cv2.rectangle(frame, (x,y), (x+w,y+h), color, 2)
+            cv2.putText(frame, f"ID:{idv}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-    for idv, centro, *_ in visibles:
+    # Log y servos
+    for idv, (cx,cy), *_ in visibles:
         if idv == seguido_id:
             last_detection_time = time.time()
-            zona_idx = centro[0] // zona_w
-            zona = etiquetas[min(zona_idx, 3)]
+            zona = etiquetas[min(cx//zona_w,3)]
             frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
             seguimiento_log.append((frame_num, idv, zona))
-
             if args.modo_rotativa:
-                actualizar_servos(*centro)
+                actualizar_servos(cx, cy)
             break
-        
-    # Si no se detecta al objetivo por más de 5 segundos se reinicia la posición de los servos
-    if args.modo_rotativa and time.time() - last_detection_time > timeout:
-        servo_x.write(baseX)
-        servo_y.write(baseY)
-        servoPos[0] = baseX
-        servoPos[1] = baseY
+
+    # Timeout servos
+    if args.modo_rotativa and time.time()-last_detection_time > timeout:
+        servo_x.write(baseX); servo_y.write(baseY)
+        servoPos[:] = [baseX, baseY]
+
     out.write(frame)
-
-    # Configurar resolución de pantalla
-    root = tk.Tk()
-    screen_w = root.winfo_screenwidth()
-    screen_h = root.winfo_screenheight()
-    root.destroy()
-
-    # Escalar manteniendo relación de aspecto
-    h, w = frame.shape[:2]
-    scale = min(screen_w / w, screen_h / h)
-    new_w, new_h = int(w * scale), int(h * scale)
-
-    # Redimensionar frame
-    resized_frame = cv2.resize(frame, (new_w, new_h))
-
-    # Crear canvas gris y centrar el frame
-    canvas = np.full((screen_h, screen_w, 3), 128, dtype=np.uint8)  # Gris
-    x_offset = (screen_w - new_w) // 2
-    y_offset = (screen_h - new_h) // 2
-    canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_frame
-
-    # Mostrar en pantalla completa
-    cv2.namedWindow("Seguimiento de persona", cv2.WND_PROP_FULLSCREEN)
-    cv2.setWindowProperty("Seguimiento de persona", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-    cv2.imshow("Seguimiento de persona", canvas)
-
-
-    #Salir con ESC
-    if cv2.waitKey(1) & 0xFF == 27:  # ESC para salir
+    cv2.imshow("Seguimiento de persona", frame)
+    if cv2.waitKey(1) & 0xFF == 27:  # ESC
         break
 
-
-# --- LIMPIEZA ---
+# ───────────────────── FIN & LIMPIEZA ─────────────────────
 if args.modo_rotativa:
     board.exit()
 cap.release()
 out.release()
 cv2.destroyAllWindows()
 
-# --- GUARDAR CSV ---
+# Guardar CSV
 with open(csv_filename, "w", newline="") as f:
-    w = csv.writer(f)
-    w.writerow(["Frame", "ID", "Zona"])
-    w.writerows(seguimiento_log)
+    csv.writer(f).writerows([("frame","id","zona"), *seguimiento_log])
 
 print(f"Video guardado en: {video_filename}")
-print(f"Log guardado en : {csv_filename}")
+print(f"Log guardado en  : {csv_filename}")
