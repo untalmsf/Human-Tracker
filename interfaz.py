@@ -4,6 +4,14 @@ from PIL import Image, ImageTk
 import pandas as pd
 import matplotlib.pyplot as plt
 from serial.tools import list_ports
+import os
+import sys
+from PIL import Image
+
+def resource_path(relative_path):
+    """ Devuelve la ruta absoluta al recurso, compatible con PyInstaller """
+    base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
 
 class TrackerGUI(tk.Frame):
     def __init__(self, master=None):
@@ -14,7 +22,8 @@ class TrackerGUI(tk.Frame):
     def create_widgets(self):
         tk.Label(self, text="", padx=50, pady=50).grid(row=0, column=0, sticky="w")
 
-        image = Image.open("logo.png")
+
+        image = Image.open(resource_path("logo.png"))
         image = image.resize((300, 300), Image.Resampling.LANCZOS)
         self.logo_img = ImageTk.PhotoImage(image)
         tk.Label(self, image=self.logo_img, padx=10, pady=10).grid(row=1, column=0, columnspan=4, pady=10)
@@ -64,7 +73,7 @@ class TrackerGUI(tk.Frame):
 
         tk.Label(self, text="", padx=20, pady=20).grid(row=12, column=0, sticky="w")
 
-        image2 = Image.open("untrefLogo.jpg")
+        image2 = Image.open(resource_path("untrefLogo.jpg"))
         image2 = image2.resize((250, 100), Image.Resampling.LANCZOS)
         self.logo_img2 = ImageTk.PhotoImage(image2)
         tk.Label(self, image=self.logo_img2, padx=10, pady=10).grid(row=13, column=0, columnspan=4, pady=10)
@@ -156,6 +165,7 @@ class TrackerGUI(tk.Frame):
             return
 
         out_file = None
+        script_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
         for f in os.listdir(script_dir):
             if f.startswith(out_base) and f.endswith(".avi"):
                 out_file = f
