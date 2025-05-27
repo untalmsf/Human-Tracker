@@ -4,9 +4,7 @@ from PIL import Image, ImageTk
 import pandas as pd
 import matplotlib.pyplot as plt
 from serial.tools import list_ports
-import os
 import sys
-from PIL import Image
 
 def resource_path(relative_path):
     """ Devuelve la ruta absoluta al recurso, compatible con PyInstaller """
@@ -16,67 +14,101 @@ def resource_path(relative_path):
 class TrackerGUI(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
-        self.pack(padx=10, pady=10)
+        self.master = master
+        self.pack()
         self.create_widgets()
 
     def create_widgets(self):
-        tk.Label(self, text="", padx=50, pady=50).grid(row=0, column=0, sticky="w")
+        # Contenedor con Scroll
+        canvas = tk.Canvas(self.master)
+        scrollbar = tk.Scrollbar(self.master, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
 
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        # Frame interno dentro del canvas
+        scrollable_frame = tk.Frame(canvas)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        self.scrollable_frame = scrollable_frame
+
+        # <<< CAMBIO aquí: anchor="center"
+        window = canvas.create_window((0, 0), window=scrollable_frame, anchor="center")
+
+        # Manejo de scroll con rueda del mouse
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # <<< NUEVO: Centrado dinámico
+        def center_content(event):
+            canvas_width = event.width
+            canvas_height = event.height
+            canvas.coords(window, canvas_width // 2, canvas_height // 2)
+
+        canvas.bind("<Configure>", center_content)
+
+        # Aquí comienza el contenido original
+        tk.Label(scrollable_frame, text="", padx=50, pady=50).grid(row=0, column=0, sticky="w")
 
         image = Image.open(resource_path("logo.png"))
         image = image.resize((300, 300), Image.Resampling.LANCZOS)
         self.logo_img = ImageTk.PhotoImage(image)
-        tk.Label(self, image=self.logo_img, padx=10, pady=10).grid(row=1, column=0, columnspan=4, pady=10)
+        tk.Label(scrollable_frame, image=self.logo_img, padx=10, pady=10).grid(row=1, column=0, columnspan=4, pady=10)
 
         self.input_mode = tk.StringVar(value="camera")
-        tk.Radiobutton(self, text="Camara", variable=self.input_mode, value="camera", command=self.on_mode_change).grid(row=2, column=0, pady=(5, 0), sticky="w")
-        tk.Radiobutton(self, text="Camara Rotativa", variable=self.input_mode, value="CamaraRot", command=self.on_mode_change).grid(row=3, column=0, pady=(5, 0), sticky="w")
-        tk.Radiobutton(self, text="Video", variable=self.input_mode, value="video", command=self.on_mode_change).grid(row=5, column=0, pady=(5, 0), sticky="w")
+        tk.Radiobutton(scrollable_frame, text="Camara", variable=self.input_mode, value="camera", command=self.on_mode_change).grid(row=2, column=0, pady=(5, 0), sticky="w")
+        tk.Radiobutton(scrollable_frame, text="Camara Rotativa", variable=self.input_mode, value="CamaraRot", command=self.on_mode_change).grid(row=3, column=0, pady=(5, 0), sticky="w")
+        tk.Radiobutton(scrollable_frame, text="Video", variable=self.input_mode, value="video", command=self.on_mode_change).grid(row=5, column=0, pady=(5, 0), sticky="w")
 
-        tk.Label(self, text="Camara:").grid(row=2, column=1, pady=(5, 0), sticky="e")
-        self.cam_index = tk.Spinbox(self, from_=0, to=2, width=5)
+        tk.Label(scrollable_frame, text="Camara:").grid(row=2, column=1, pady=(5, 0), sticky="e")
+        self.cam_index = tk.Spinbox(scrollable_frame, from_=0, to=2, width=5)
         self.cam_index.grid(row=2, column=2, pady=(5, 0), sticky="w")
 
-        self.label_com = tk.Label(self, text="Puerto COM:")
+        self.label_com = tk.Label(scrollable_frame, text="Puerto COM:")
         self.label_com.grid(row=3, column=1, pady=(5, 0), sticky="e")
-        self.combo_com = ttk.Combobox(self, values=self.get_arduino_ports(), width=15)
+        self.combo_com = ttk.Combobox(scrollable_frame, values=self.get_arduino_ports(), width=15)
         self.combo_com.grid(row=3, column=2, pady=(5, 0), sticky="w")
 
-        self.video_path = tk.Entry(self, width=30, state="disabled")
+        self.video_path = tk.Entry(scrollable_frame, width=30, state="disabled")
         self.video_path.grid(row=5, column=1, columnspan=2, pady=(5, 0), sticky="w")
-        self.btn_browse = tk.Button(self, text="Buscar...", command=self.browse_video, state="disabled")
+        self.btn_browse = tk.Button(scrollable_frame, text="Buscar...", command=self.browse_video, state="disabled")
         self.btn_browse.grid(row=5, column=3, pady=(5, 0))
 
-        tk.Label(self, text="Nombre del video:").grid(row=6, column=0, pady=(5, 0), sticky="e")
-        self.out_base = tk.Entry(self, width=20)
+        tk.Label(scrollable_frame, text="Nombre del video:").grid(row=6, column=0, pady=(5, 0), sticky="e")
+        self.out_base = tk.Entry(scrollable_frame, width=20)
         self.out_base.insert(0, "output")
         self.out_base.grid(row=6, column=1, columnspan=2, pady=(5, 0), sticky="w")
 
-        tk.Label(self, text="FPS:").grid(row=7, column=0, pady=(5, 0), sticky="e")
-        self.fps_entry = tk.Entry(self, width=10)
+        tk.Label(scrollable_frame, text="FPS:").grid(row=7, column=0, pady=(5, 0), sticky="e")
+        self.fps_entry = tk.Entry(scrollable_frame, width=10)
         self.fps_entry.insert(0, "30")
         self.fps_entry.grid(row=7, column=1, pady=(5, 0), sticky="w")
 
-        tk.Label(self, text="Resolución:").grid(row=8, column=0, pady=(5, 0), sticky="e")
-        self.resolution_combo = ttk.Combobox(self, values=["640x480", "1280x720", "1920x1080"], width=15)
+        tk.Label(scrollable_frame, text="Resolución:").grid(row=8, column=0, pady=(5, 0), sticky="e")
+        self.resolution_combo = ttk.Combobox(scrollable_frame, values=["640x480", "1280x720", "1920x1080"], width=15)
         self.resolution_combo.set("640x480")
         self.resolution_combo.grid(row=8, column=1, pady=(5, 0), sticky="w")
 
         self.draw_boxes = tk.BooleanVar(value=True)
-        tk.Checkbutton(self, text="Bounding boxes", variable=self.draw_boxes).grid(row=9, column=0, columnspan=3, pady=(5, 0), sticky="w")
+        tk.Checkbutton(scrollable_frame, text="Bounding boxes", variable=self.draw_boxes).grid(row=9, column=0, columnspan=3, pady=(5, 0), sticky="w")
 
-        self.btn_start = tk.Button(self, text="Procesar", command=self.start_tracking)
+        self.btn_start = tk.Button(scrollable_frame, text="Procesar", command=self.start_tracking)
         self.btn_start.grid(row=10, column=0, columnspan=4, pady=10)
 
-        self.btn_analyze = tk.Button(self, text="Analizar CSV", command=self.analyze_csv)
+        self.btn_analyze = tk.Button(scrollable_frame, text="Analizar CSV", command=self.analyze_csv)
         self.btn_analyze.grid(row=11, column=0, columnspan=4, pady=10)
 
-        tk.Label(self, text="", padx=20, pady=20).grid(row=12, column=0, sticky="w")
+        tk.Label(scrollable_frame, text="", padx=20, pady=20).grid(row=12, column=0, sticky="w")
 
         image2 = Image.open(resource_path("untrefLogo.jpg"))
         image2 = image2.resize((250, 100), Image.Resampling.LANCZOS)
         self.logo_img2 = ImageTk.PhotoImage(image2)
-        tk.Label(self, image=self.logo_img2, padx=10, pady=10).grid(row=13, column=0, columnspan=4, pady=10)
+        tk.Label(scrollable_frame, image=self.logo_img2, padx=10, pady=10).grid(row=13, column=0, columnspan=4, pady=10)
 
         self.on_mode_change()
 
@@ -132,10 +164,15 @@ class TrackerGUI(tk.Frame):
             messagebox.showerror("Error", "La resolución seleccionada es inválida.")
             return
 
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        script_path = os.path.join(script_dir, "detectarweb.py")
+        # Detectar si estamos en .exe o modo script
+        script_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
 
-        cmd = ["python", script_path, "--out-base", out_base, "--fps", fps, "--resolution", resolution]
+        if ("interfaz.exe" in sys.executable) :
+            detectar_path =  os.path.join(script_dir, "detectarweb.exe") # usamos el .exe directamente
+            cmd =  [detectar_path, "--out-base", out_base, "--fps", fps, "--resolution", resolution] 
+        else:
+            detectar_path = os.path.join(script_dir, "detectarweb.py") 
+            cmd = ["python", detectar_path, "--out-base", out_base, "--fps", fps, "--resolution", resolution]
 
         if mode == "camera":
             idx = int(self.cam_index.get())
@@ -152,7 +189,7 @@ class TrackerGUI(tk.Frame):
             if not vid or not os.path.isfile(vid):
                 messagebox.showerror("Error", "Debe seleccionar un video válido.")
                 return
-            cmd += ["--video", vid]
+            cmd += ["--video" ,vid]
 
         if not self.draw_boxes.get():
             cmd += ["--no-boxes"]
@@ -165,7 +202,6 @@ class TrackerGUI(tk.Frame):
             return
 
         out_file = None
-        script_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
         for f in os.listdir(script_dir):
             if f.startswith(out_base) and f.endswith(".avi"):
                 out_file = f
@@ -189,9 +225,8 @@ class TrackerGUI(tk.Frame):
         except Exception as e:
             messagebox.showerror("Error al procesar archivo", str(e))
 
+# Cambiado: Título de la ventana
 root = tk.Tk()
+root.title("Human Tracker")  # <<< ESTABLECER TÍTULO DE VENTANA
 app = TrackerGUI(master=root)
 app.mainloop()
-
-
-
