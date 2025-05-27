@@ -18,6 +18,20 @@ class TrackerGUI(tk.Frame):
         self.pack()
         self.create_widgets()
 
+    def on_preset_change(self, event):
+        selected_name = self.youtube_presets.get()
+        selected_url = self.youtube_options.get(selected_name, "")
+
+        self.youtube_url.config(state="normal")  # habilita temporalmente para insertar texto
+        self.youtube_url.delete(0, tk.END)
+        self.youtube_url.insert(0, selected_url)
+
+        if selected_name == "Personalizado":
+            self.youtube_url.config(state="normal")
+        else:
+            self.youtube_url.config(state="disabled")
+
+
     def create_widgets(self):
         # Contenedor con Scroll
         canvas = tk.Canvas(self.master)
@@ -51,7 +65,7 @@ class TrackerGUI(tk.Frame):
             canvas.coords(window, canvas_width // 2, canvas_height // 2)
 
         canvas.bind("<Configure>", center_content)
-
+        
         # Aquí comienza el contenido original
         tk.Label(scrollable_frame, text="", padx=50, pady=50).grid(row=0, column=0, sticky="w")
 
@@ -64,6 +78,8 @@ class TrackerGUI(tk.Frame):
         tk.Radiobutton(scrollable_frame, text="Camara", variable=self.input_mode, value="camera", command=self.on_mode_change).grid(row=2, column=0, pady=(5, 0), sticky="w")
         tk.Radiobutton(scrollable_frame, text="Camara Rotativa", variable=self.input_mode, value="CamaraRot", command=self.on_mode_change).grid(row=3, column=0, pady=(5, 0), sticky="w")
         tk.Radiobutton(scrollable_frame, text="Video", variable=self.input_mode, value="video", command=self.on_mode_change).grid(row=5, column=0, pady=(5, 0), sticky="w")
+        tk.Radiobutton(scrollable_frame, text="Camara publica", variable=self.input_mode, value="youtube", command=self.on_mode_change).grid(row=4, column=0, pady=(5, 0), sticky="w")  # <<< NUEVO
+
 
         tk.Label(scrollable_frame, text="Camara:").grid(row=2, column=1, pady=(5, 0), sticky="e")
         self.cam_index = tk.Spinbox(scrollable_frame, from_=0, to=2, width=5)
@@ -78,6 +94,27 @@ class TrackerGUI(tk.Frame):
         self.video_path.grid(row=5, column=1, columnspan=2, pady=(5, 0), sticky="w")
         self.btn_browse = tk.Button(scrollable_frame, text="Buscar...", command=self.browse_video, state="disabled")
         self.btn_browse.grid(row=5, column=3, pady=(5, 0))
+
+        tk.Label(scrollable_frame, text="URL:").grid(row=4, column=1, pady=(5, 0), sticky="e")  # <<< NUEVO
+        self.youtube_url = tk.Entry(scrollable_frame, width=30, state="disabled")  # <<< NUEVO
+        self.youtube_url.grid(row=4, column=2, columnspan=2, pady=(5, 0), sticky="w")  # <<< NUEVO
+
+        tk.Label(scrollable_frame, text="").grid(row=4, column=0, pady=(5, 0), sticky="e")
+
+        self.youtube_options = {
+            "Personalizado": "",
+            "Times Square": "https://www.youtube.com/watch?v=rnXIjl_Rzy4",
+            "Pinamar": "https://www.youtube.com/watch?v=VUODMJsRM9E",
+            "Deadwood": "https://www.youtube.com/watch?v=IkxxNB-3HEw",
+            "Mundo": "https://www.youtube.com/watch?v=z7SiAaN4ogw"
+        }
+
+        self.youtube_presets = ttk.Combobox(scrollable_frame, state="readonly", width=25)
+        self.youtube_presets['values'] = list(self.youtube_options.keys())
+        self.youtube_presets.set("Personalizado")
+        self.youtube_presets.grid(row=4, column=1, pady=(5, 0), sticky="w")
+        self.youtube_presets.bind("<<ComboboxSelected>>", self.on_preset_change)
+
 
         tk.Label(scrollable_frame, text="Nombre del video:").grid(row=6, column=0, pady=(5, 0), sticky="e")
         self.out_base = tk.Entry(scrollable_frame, width=20)
@@ -114,22 +151,28 @@ class TrackerGUI(tk.Frame):
 
     def on_mode_change(self):
         mode = self.input_mode.get()
+        self.cam_index.config(state="disabled")
+        self.video_path.config(state="disabled")
+        self.btn_browse.config(state="disabled")
+        self.combo_com.config(state="disabled")
+        self.youtube_url.config(state="disabled")  # <<< NUEVO
+        self.youtube_presets.config(state="disabled")
+
         if mode == "camera":
             self.cam_index.config(state="normal")
-            self.video_path.config(state="disabled")
-            self.btn_browse.config(state="disabled")
-            self.combo_com.config(state="disabled")
         elif mode == "CamaraRot":
             self.cam_index.config(state="normal")
-            self.video_path.config(state="disabled")
-            self.btn_browse.config(state="disabled")
             self.combo_com.config(state="readonly")
             self.combo_com['values'] = self.get_arduino_ports()
-        else:
-            self.cam_index.config(state="disabled")
+        elif mode == "video":
             self.video_path.config(state="normal")
             self.btn_browse.config(state="normal")
-            self.combo_com.config(state="disabled")
+        elif mode == "youtube":
+            self.youtube_url.config(state="normal")
+            self.youtube_presets.config(state="readonly")    
+        if mode != "youtube":
+            self.youtube_url.delete(0, tk.END)
+
 
     def browse_video(self):
         path = filedialog.askopenfilename(title="Select video file", filetypes=[("MP4 files", "*.mp4"), ("All files", "*.*")])
@@ -167,7 +210,7 @@ class TrackerGUI(tk.Frame):
         # Detectar si estamos en .exe o modo script
         script_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
 
-        if ("interfaz.exe" in sys.executable) :
+        if ("Human Tracker.exe" in sys.executable) :
             detectar_path =  os.path.join(script_dir, "detectarweb.exe") # usamos el .exe directamente
             cmd =  [detectar_path, "--out-base", out_base, "--fps", fps, "--resolution", resolution] 
         else:
@@ -184,12 +227,18 @@ class TrackerGUI(tk.Frame):
                 messagebox.showerror("Error", "Debe seleccionar un puerto COM para el Arduino.")
                 return
             cmd += ["--camera", str(idx), "--modo-rotativa", "--com", port]
+        elif mode == "youtube":
+            yt_url = self.youtube_url.get().strip()
+            if not yt_url or "youtube.com" not in yt_url and "youtu.be" not in yt_url:
+                messagebox.showerror("Error", "Debe ingresar una URL de YouTube válida.")
+                return
+            cmd += ["--youtube", yt_url]
         else:
             vid = self.video_path.get().strip()
             if not vid or not os.path.isfile(vid):
                 messagebox.showerror("Error", "Debe seleccionar un video válido.")
                 return
-            cmd += ["--video" ,vid]
+            cmd += ["--video", vid]
 
         if not self.draw_boxes.get():
             cmd += ["--no-boxes"]
@@ -230,3 +279,6 @@ root = tk.Tk()
 root.title("Human Tracker")  # <<< ESTABLECER TÍTULO DE VENTANA
 app = TrackerGUI(master=root)
 app.mainloop()
+
+
+

@@ -1,6 +1,9 @@
 import cv2, numpy as np, csv, os, warnings, argparse, time
+import sys
 from ultralytics import YOLO
 from pyfirmata2 import Arduino
+import yt_dlp
+from yt_dlp import YoutubeDL
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
@@ -8,6 +11,9 @@ warnings.filterwarnings("ignore", message=".*autocast.*")
 parser = argparse.ArgumentParser(description="Person Tracker con YOLOv8 + click-selector")
 parser.add_argument("--camera", type=int)
 parser.add_argument("--video")
+parser.add_argument("--live", type=str, help="URL o parámetro para obtener stream en vivo")
+parser.add_argument("--youtube", type=str, help="URL de YouTube a utilizar como fuente de video")
+parser.add_argument("--earthcam", type=str, help="URL de EarthCam a utilizar como fuente de video")  # NUEVO
 parser.add_argument("--out-base", required=True)
 parser.add_argument("--no-boxes", action="store_true")
 parser.add_argument("--modo-rotativa", action="store_true")
@@ -19,9 +25,9 @@ args = parser.parse_args()
 # ───────────── CONFIG. GENERAL ────────────────
 res_w, res_h = map(int, args.resolution.split("x"))
 fps = args.fps
-baseX, baseY = 80, 100                         # pos. “home” servos
+baseX, baseY = 80, 100
 servoPos = [baseX, baseY]
-last_det_t, timeout = time.time(), 5           # seg. sin det. → home
+last_det_t, timeout = time.time(), 5
 
 if args.modo_rotativa:
     board = Arduino(args.com); time.sleep(.5)
@@ -38,8 +44,48 @@ def unico(base, ext):
 vid_out = unico(args.out_base, "avi")
 csv_out = unico("seguimiento", "csv")
 
-# ───────────── CAPTURA ─────────────
-cap = cv2.VideoCapture(args.camera if args.camera is not None else args.video)
+# === FUNCION GENERAL PARA OBTENER STREAM
+def get_stream_url(url):
+    ydl_opts = {
+        'quiet': True,
+        'skip_download': True,
+        'format': 'best[ext=mp4]/best',
+    }
+    with YoutubeDL(ydl_opts) as ydl:
+        info_dict = ydl.extract_info(url, download=False)
+        if 'url' in info_dict:
+            return info_dict['url']
+        elif 'formats' in info_dict:
+            for fmt in info_dict['formats']:
+                if fmt.get('vcodec') != 'none':
+                    return fmt['url']
+    raise RuntimeError("No se pudo obtener la URL del stream")
+
+# ───────────── CAPTURA DE VIDEO ─────────────
+cap = None
+try:
+    if args.youtube:
+        stream_url = get_stream_url(args.youtube)
+        cap = cv2.VideoCapture(stream_url)
+        if not cap.isOpened():
+            print("No se pudo abrir el stream de YouTube.")
+            sys.exit(1)
+    elif args.earthcam:
+        stream_url = get_stream_url(args.earthcam)
+        cap = cv2.VideoCapture(stream_url)
+        if not cap.isOpened():
+            print("No se pudo abrir el stream de EarthCam.")
+            sys.exit(1)
+    elif args.live:
+        print("Obteniendo stream en vivo...")
+        stream_url = get_stream_url(args.live)
+        cap = cv2.VideoCapture(stream_url)
+    else:
+        cap = cv2.VideoCapture(args.camera if args.camera is not None else args.video)
+except Exception as e:
+    print(f"Error al abrir el video/stream: {e}")
+    sys.exit(1)
+
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,  res_w)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res_h)
 cap.set(cv2.CAP_PROP_FPS,          fps)
@@ -99,7 +145,6 @@ def move_servos(cx,cy):
 
 # ───────────── BUCLE PRINCIPAL ─────────────
 while True:
-    # ←―― Nueva línea: salir si la ventana se cerró con la “X”
     if cv2.getWindowProperty("Seguimiento de persona", cv2.WND_PROP_VISIBLE) < 1:
         break
 
@@ -111,11 +156,9 @@ while True:
     vis = associate(detect(frame))
     if seguido_id is None and vis: seguido_id=vis[0][0]
 
-    # zonas
     zona_w = res_w//4
     for i in range(1,4): cv2.line(frame,(i*zona_w,0),(i*zona_w,res_h),(200,200,200),2)
 
-    # dibujar & log
     for idv,(cx,cy),x,y,w,h in vis:
         color=(0,255,0) if idv==seguido_id else (255,0,0)
         if not args.no_boxes:
@@ -132,7 +175,7 @@ while True:
 
     out.write(frame)
     cv2.imshow("Seguimiento de persona", frame)
-    if cv2.waitKey(1)&0xFF==27: break      # ESC para salir
+    if cv2.waitKey(1)&0xFF==27: break
 
 # ───────────── LIMPIEZA ─────────────
 if args.modo_rotativa: board.exit()

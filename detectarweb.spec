@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['interfaz.py'],
+    ['detectarweb.py'],
     pathex=[],
     binaries=[],
-    datas=[("logo.png","."),("untrefLogo.jpg",".")],
+    datas=[],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Human Tracker',
+    name='detectarweb',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,6 +35,4 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['logo.ico'],
-    single_file=True,
 )
