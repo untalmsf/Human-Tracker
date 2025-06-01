@@ -17,6 +17,14 @@ class TrackerGUI(tk.Frame):
         self.pack()
         self.create_widgets()
 
+    def get_url_type(self, url):
+        if "youtube.com" in url or "youtu.be" in url:
+            return "youtube"
+        elif "earthcam.com" in url:
+            return "earthcam"
+        else:
+            return "otro"
+
     def on_preset_change(self, event):
         selected_name = self.youtube_presets.get()
         selected_url = self.youtube_options.get(selected_name, "")
@@ -186,7 +194,7 @@ class TrackerGUI(tk.Frame):
             messagebox.showerror("Error", "Resolución inválida.")
             return None
 
-        output_folder = os.path.join(os.getcwd(), "outputs")
+        output_folder = os.path.join(os.getcwd(), "output")
         os.makedirs(output_folder, exist_ok=True)
         out_base_path = os.path.join(output_folder, out_base)
 
@@ -203,20 +211,28 @@ class TrackerGUI(tk.Frame):
 
         if not self.draw_boxes.get():
             cmd.append("--no-boxes")
-        
-        port = self.combo_com.get().strip()
 
-        if mode == "camera" and port:
-            cmd += ["--camera-doble", "--com", port]
-        elif mode == "camera":
+        if mode == "camera":
             cmd += ["--camera", self.cam_index.get()]
-            messagebox.showinfo("Camara", "No ha seleccionado un puerto COM.\nSe usará unicamente la cámara principal.")
+            if mode == "CamaraRot":
+                port = self.combo_com.get().strip()
+                if not port:
+                    messagebox.showerror("Error", "Seleccione puerto COM.")
+                    return None
+                cmd += ["--modo-rotativa", "--com", port]
         elif mode == "youtube":
-            yt = self.youtube_url.get().strip()
-            if "youtube.com" not in yt and "youtu.be" not in yt:
-                messagebox.showerror("Error", "URL de YouTube inválida.")
+            url = self.youtube_url.get().strip()
+            if not url:
+                messagebox.showerror("Error", "Ingrese una URL.")
                 return None
-            cmd += ["--youtube", yt]
+            url_type = self.get_url_type(url)
+            if url_type == "youtube":
+                cmd += ["--youtube", url]
+            elif url_type == "earthcam":
+                cmd += ["--earthcam", url]
+            else:
+                messagebox.showerror("Error", "URL inválida o no compatible.\nSolo se admiten YouTube o EarthCam.")
+                return None
         elif mode == "video":
             path = self.video_path.get().strip()
             if not path or not os.path.isfile(path):
@@ -231,7 +247,7 @@ class TrackerGUI(tk.Frame):
         if cmd:
             proc = subprocess.Popen(cmd)
             proc.wait()
-            messagebox.showinfo("Finalizado", "Procesamiento completado y guardado en /outputs.")
+            messagebox.showinfo("Finalizado", "Procesamiento completado y guardado en /output.")
 
     def start_tracking_no_save(self):
         cmd = self._build_cmd(save_output=False)
