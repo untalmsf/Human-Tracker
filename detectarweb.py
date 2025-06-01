@@ -3,7 +3,6 @@ import sys
 from ultralytics import YOLO
 from pyfirmata2 import Arduino
 import yt_dlp
-from yt_dlp import YoutubeDL
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
@@ -52,7 +51,7 @@ csv_out = unico(base, "csv") if not args.no_save else None
 
 def get_stream_url(url):
     ydl_opts = {'quiet': True, 'skip_download': True, 'format': 'best[ext=mp4]/best'}
-    with YoutubeDL(ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info_dict = ydl.extract_info(url, download=False)
         if 'url' in info_dict:
             return info_dict['url']

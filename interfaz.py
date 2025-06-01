@@ -58,26 +58,34 @@ class TrackerGUI(tk.Frame):
         canvas.bind("<Configure>", center_scrollable)
 
 
-        tk.Label(scrollable_frame, text="", padx=50, pady=50).grid(row=0, column=0, sticky="w")
+        tk.Label(scrollable_frame, text="", padx=50, pady=30).grid(row=0, column=0, sticky="w")
         image = Image.open(resource_path("logo.png")).resize((300, 300))
         self.logo_img = ImageTk.PhotoImage(image)
-        tk.Label(scrollable_frame, image=self.logo_img).grid(row=1, column=0, columnspan=4, pady=10)
+        tk.Label(scrollable_frame, image=self.logo_img).grid(row=1, column=0, columnspan=4, pady=5)
+
+        tk.Label(scrollable_frame, text="Human Tracker", font=("Arial", 24)).grid(row=2, column=0, columnspan=4, pady=5)
+        
+        # Selección de modo de entrada
+        tk.Label(scrollable_frame, text="Modo de funcionamiento", font=("Arial", 18)).grid(row=3, column=0, pady=5, sticky="w", columnspan=4)
 
         self.input_mode = tk.StringVar(value="camera")
-        tk.Radiobutton(scrollable_frame, text="Camara", variable=self.input_mode, value="camera", command=self.on_mode_change).grid(row=2, column=0, sticky="w")
-        tk.Radiobutton(scrollable_frame, text="Camara Rotativa", variable=self.input_mode, value="CamaraRot", command=self.on_mode_change).grid(row=3, column=0, sticky="w")
-        tk.Radiobutton(scrollable_frame, text="Camara publica", variable=self.input_mode, value="youtube", command=self.on_mode_change).grid(row=4, column=0, sticky="w")
-        tk.Radiobutton(scrollable_frame, text="Video", variable=self.input_mode, value="video", command=self.on_mode_change).grid(row=5, column=0, sticky="w")
+        tk.Radiobutton(scrollable_frame, text="Camara", variable=self.input_mode, value="camera", command=self.on_mode_change).grid(row=4, column=0, sticky="w")
+        tk.Label(scrollable_frame, text="Camara Rotativa").grid(row=5, column=0, sticky="w" ,padx=20)
+        tk.Radiobutton(scrollable_frame, text="Camara publica", variable=self.input_mode, value="youtube", command=self.on_mode_change).grid(row=6, column=0, sticky="w")
+        tk.Radiobutton(scrollable_frame, text="Video", variable=self.input_mode, value="video", command=self.on_mode_change).grid(row=7, column=0, sticky="w")
 
-        tk.Label(scrollable_frame, text="Camara:").grid(row=2, column=1, sticky="e")
+        # Parametros de camara
         self.cam_index = tk.Spinbox(scrollable_frame, from_=0, to=2, width=5)
-        self.cam_index.grid(row=2, column=2, sticky="w")
+        self.cam_index.grid(row=4, column=1, sticky="w")
 
-        self.label_com = tk.Label(scrollable_frame, text="Puerto COM:")
-        self.label_com.grid(row=3, column=1, sticky="e")
+        # Parametros de camara secundaria y arduino
+        self.cam_index_sec = tk.Spinbox(scrollable_frame, from_=0, to=2, width=5)
+        self.cam_index_sec.grid(row=5, column=1, sticky="w")
+        self.label_com = tk.Label(scrollable_frame, text="Puerto COM:").grid(row=5, column=2, sticky="e")
         self.combo_com = ttk.Combobox(scrollable_frame, values=self.get_arduino_ports(), width=15)
-        self.combo_com.grid(row=3, column=2, sticky="w")
+        self.combo_com.grid(row=5, column=3, sticky="w")
 
+        # Parametros de video de youtube
         self.youtube_options = {
             "Personalizado": "",
             "Times Square": "https://www.youtube.com/watch?v=rnXIjl_Rzy4",
@@ -86,58 +94,65 @@ class TrackerGUI(tk.Frame):
             "Mundo": "https://www.youtube.com/watch?v=z7SiAaN4ogw"
         }
 
-        self.youtube_presets = ttk.Combobox(scrollable_frame, state="readonly", width=25)
+        self.youtube_presets = ttk.Combobox(scrollable_frame, state="readonly", width=27)
         self.youtube_presets['values'] = list(self.youtube_options.keys())
         self.youtube_presets.set("Personalizado")
-        self.youtube_presets.grid(row=4, column=1, sticky="w")
+        self.youtube_presets.grid(row=6, column=1, sticky="w")
         self.youtube_presets.bind("<<ComboboxSelected>>", self.on_preset_change)
 
-        tk.Label(scrollable_frame, text="URL:").grid(row=4, column=2, sticky="e")
+        tk.Label(scrollable_frame, text="URL:").grid(row=6, column=2, sticky="e")
         self.youtube_url = tk.Entry(scrollable_frame, width=30, state="disabled")
-        self.youtube_url.grid(row=4, column=3, sticky="w")
+        self.youtube_url.grid(row=6, column=3, sticky="w")
 
+        # Parametros de video externo
         self.video_path = tk.Entry(scrollable_frame, width=30, state="disabled")
-        self.video_path.grid(row=5, column=1, columnspan=2, sticky="w")
+        self.video_path.grid(row=7, column=1, sticky="w")
         self.btn_browse = tk.Button(scrollable_frame, text="Buscar...", command=self.browse_video, state="disabled")
-        self.btn_browse.grid(row=5, column=3)
+        self.btn_browse.grid(row=7, column=2)
+        
+        # Opciones de salida
+        tk.Label(scrollable_frame, text="Funciones avanzadas", font=("Arial", 18)).grid(row=8, column=0, pady=5, sticky="w", columnspan=4)
 
-        tk.Label(scrollable_frame, text="Nombre del video:").grid(row=6, column=0, sticky="e")
+        tk.Label(scrollable_frame, text="Nombre del video:").grid(row=9, column=0, sticky="e", pady=2)
         self.out_base = tk.Entry(scrollable_frame, width=20)
         self.out_base.insert(0, "output")
-        self.out_base.grid(row=6, column=1, columnspan=2, sticky="w")
+        self.out_base.grid(row=9, column=1, columnspan=2, sticky="w", pady=2)
 
-        tk.Label(scrollable_frame, text="FPS:").grid(row=7, column=0, sticky="e")
-        self.fps_entry = tk.Entry(scrollable_frame, width=10)
-        self.fps_entry.insert(0, "30")
-        self.fps_entry.grid(row=7, column=1, sticky="w")
+        tk.Label(scrollable_frame, text="FPS:").grid(row=10, column=0, sticky="e", pady=2)
+        fps = tk.StringVar(root)
+        fps.set("30")
+        self.fps_entry = tk.Spinbox(scrollable_frame, width=10, from_=0, to=120, textvariable=fps)
+        self.fps_entry.grid(row=10, column=1, sticky="w", pady=2)
 
-        tk.Label(scrollable_frame, text="Resolución:").grid(row=8, column=0, sticky="e")
+        tk.Label(scrollable_frame, text="Resolución:").grid(row=11, column=0, sticky="e", pady=2)
         self.resolution_combo = ttk.Combobox(scrollable_frame, values=["640x480", "1280x720", "1920x1080"], width=15)
         self.resolution_combo.set("640x480")
-        self.resolution_combo.grid(row=8, column=1, sticky="w")
+        self.resolution_combo.grid(row=11, column=1, sticky="w", pady=2)
 
         self.draw_boxes = tk.BooleanVar(value=True)
-        tk.Checkbutton(scrollable_frame, text="Bounding boxes", variable=self.draw_boxes).grid(row=9, column=0, columnspan=3, sticky="w")
+        tk.Checkbutton(scrollable_frame, text="Bounding boxes", variable=self.draw_boxes).grid(row=12, column=1, columnspan=3, sticky="w", pady=2)
 
-        self.btn_start = tk.Button(scrollable_frame, text="Procesar y guardar", command=self.start_tracking)
-        self.btn_start.grid(row=10, column=2, pady=10)
+        # Botones de acción
+        self.btn_start_nosave = tk.Button(scrollable_frame, text="Procesar sin guardar", command=self.start_tracking_no_save, width=20, height=2)
+        self.btn_start_nosave.grid(row=13, column=0, columnspan=2, pady=10)
 
-        self.btn_start_nosave = tk.Button(scrollable_frame, text="Procesar sin guardar", command=self.start_tracking_no_save)
-        self.btn_start_nosave.grid(row=10, column=1, pady=10)
+        self.btn_start = tk.Button(scrollable_frame, text="Procesar y guardar", command=self.start_tracking, width=20, height=2)
+        self.btn_start.grid(row=13, column=2, columnspan=2, pady=10, padx=25, sticky="w")
 
         self.btn_analyze = tk.Button(scrollable_frame, text="Analizar CSV", command=self.analyze_csv)
-        self.btn_analyze.grid(row=11, column=0, columnspan=4, pady=10)
+        self.btn_analyze.grid(row=14, column=0, columnspan=4, pady=10)
 
         image2 = Image.open(resource_path("untrefLogo.jpg")).resize((250, 100))
         self.logo_img2 = ImageTk.PhotoImage(image2)
-        tk.Label(scrollable_frame, image=self.logo_img2).grid(row=13, column=0, columnspan=4, pady=10)
+        tk.Label(scrollable_frame, image=self.logo_img2).grid(row=15, column=0, columnspan=4, pady=10)
 
         self.on_mode_change()
 
     def on_mode_change(self):
         mode = self.input_mode.get()
-        self.cam_index.config(state="normal" if mode in ["camera", "CamaraRot"] else "disabled")
-        self.combo_com.config(state="readonly" if mode == "CamaraRot" else "disabled")
+        self.cam_index.config(state="normal" if mode == "camera" else "disabled")
+        self.cam_index_sec.config(state="normal" if mode == "camera" else "disabled")
+        self.combo_com.config(state="readonly" if mode == "camera" else "disabled")
         self.video_path.config(state="normal" if mode == "video" else "disabled")
         self.btn_browse.config(state="normal" if mode == "video" else "disabled")
         self.youtube_url.config(state="normal" if mode == "youtube" else "disabled")
@@ -191,12 +206,12 @@ class TrackerGUI(tk.Frame):
 
         if mode == "camera":
             cmd += ["--camera", self.cam_index.get()]
-        elif mode == "CamaraRot":
-            port = self.combo_com.get().strip()
-            if not port:
-                messagebox.showerror("Error", "Seleccione puerto COM.")
-                return None
-            cmd += ["--camera", self.cam_index.get(), "--modo-rotativa", "--com", port]
+            if mode == "CamaraRot":
+                port = self.combo_com.get().strip()
+                if not port:
+                    messagebox.showerror("Error", "Seleccione puerto COM.")
+                    return None
+                cmd += ["--modo-rotativa", "--com", port]
         elif mode == "youtube":
             yt = self.youtube_url.get().strip()
             if "youtube.com" not in yt and "youtu.be" not in yt:
