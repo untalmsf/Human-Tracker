@@ -6,6 +6,7 @@ import yt_dlp
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
+# Parametros de la interfaz
 parser = argparse.ArgumentParser(description="Person Tracker con YOLOv8 + click-selector")
 parser.add_argument("--camera", type=int)
 parser.add_argument("--video")
@@ -14,25 +15,28 @@ parser.add_argument("--youtube", type=str, help="URL de YouTube a utilizar como 
 parser.add_argument("--earthcam", type=str, help="URL de EarthCam a utilizar como fuente de video")
 parser.add_argument("--out-base", required=True)
 parser.add_argument("--no-boxes", action="store_true")
-parser.add_argument("--modo-rotativa", action="store_true")
+parser.add_argument("--camera-doble", action="store_true")
 parser.add_argument("--com")
 parser.add_argument("--resolution", default="640x480")
 parser.add_argument("--fps", type=float, default=30.0)
 parser.add_argument("--no-save", action="store_true", help="No guardar archivos")
 args = parser.parse_args()
 
+# Variables de la base rotativa
 res_w, res_h = map(int, args.resolution.split("x"))
 fps = args.fps
 baseX, baseY = 80, 100
 servoPos = [baseX, baseY]
 last_det_t, timeout = time.time(), 5
 
-if args.modo_rotativa:
+# Inicialización de la placa Arduino y servos
+if args.camera_doble:
     board = Arduino(args.com); time.sleep(.5)
     servo_x = board.get_pin("d:9:s")
     servo_y = board.get_pin("d:10:s")
     servo_x.write(baseX); servo_y.write(baseY); time.sleep(.5)
 
+# Generación de nombre de archivos
 def unico(base_path, ext):
     nombre = f"{base_path}.{ext}"
     i = 1
@@ -49,6 +53,7 @@ base = args.out_base
 vid_out = unico(base, "avi") if not args.no_save else None
 csv_out = unico(base, "csv") if not args.no_save else None
 
+# Función para obtener la URL del stream
 def get_stream_url(url):
     ydl_opts = {'quiet': True, 'skip_download': True, 'format': 'best[ext=mp4]/best'}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -61,6 +66,7 @@ def get_stream_url(url):
                     return fmt['url']
     raise RuntimeError("No se pudo obtener la URL del stream")
 
+# Inicialización del video o stream
 cap = None
 try:
     if args.youtube:
@@ -82,6 +88,7 @@ if not cap or not cap.isOpened():
     print("No se pudo abrir el stream o video.")
     sys.exit(1)
 
+# Configuración de la captura de video
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,  res_w)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res_h)
 cap.set(cv2.CAP_PROP_FPS,          fps)
@@ -95,6 +102,7 @@ cands, log = {}, []
 UMBRAL = 50
 etiquetas = ["Izquierda", "Centro-Izq", "Centro-Der", "Derecha"]
 
+# Función para seleccion de persona con click
 def click(event, x, y, flags, param):
     global seguido_id
     if event == cv2.EVENT_LBUTTONDOWN:
@@ -105,6 +113,7 @@ def click(event, x, y, flags, param):
 cv2.namedWindow("Seguimiento de persona")
 cv2.setMouseCallback("Seguimiento de persona", click)
 
+# Función para detectar personas
 def detect(frame):
     r = model.predict(frame, imgsz=640, conf=0.6, verbose=False)[0]
     outs=[]
@@ -114,6 +123,7 @@ def detect(frame):
             outs.append(((int(x1+w/2),int(y1+h/2)), int(x1),int(y1),int(w),int(h)))
     return outs
 
+# Función para asociar detecciones con IDs
 def associate(nuevos):
     global next_id
     vis=[]
@@ -128,6 +138,7 @@ def associate(nuevos):
             cands[next_id]=(c,x,y,w,h); vis.append((next_id,c,x,y,w,h)); next_id+=1
     return vis
 
+# Función para mover los servos de la base rotativa
 def move_servos(cx,cy):
     global servoPos
     errx, erry = (res_w//2-cx), (cy-res_h//2)
@@ -135,6 +146,7 @@ def move_servos(cx,cy):
     servoPos[1]=np.clip(servoPos[1]+0.03*erry, 75,120)
     servo_x.write(servoPos[0]); servo_y.write(servoPos[1])
 
+# Bucle principal de captura y procesamiento
 while True:
     if cv2.getWindowProperty("Seguimiento de persona", cv2.WND_PROP_VISIBLE) < 1:
         break
@@ -155,14 +167,15 @@ while True:
             last_det_t=time.time()
             zona=etiquetas[min(cx//zona_w,3)]
             log.append((int(cap.get(cv2.CAP_PROP_POS_FRAMES)), idv, zona))
-            if args.modo_rotativa: move_servos(cx,cy)
-    if args.modo_rotativa and time.time()-last_det_t>timeout:
+            if args.camera_doble: move_servos(cx,cy)
+    if args.camera_doble and time.time()-last_det_t>timeout:
         servo_x.write(baseX); servo_y.write(baseY); servoPos=[baseX,baseY]
     if out: out.write(frame)
     cv2.imshow("Seguimiento de persona", frame)
     if cv2.waitKey(1)&0xFF==27: break
 
-if args.modo_rotativa: board.exit()
+# Finalización y limpieza
+if args.camera_doble: board.exit()
 cap.release(); cv2.destroyAllWindows()
 if out: out.release()
 if csv_out:
