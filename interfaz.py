@@ -218,7 +218,12 @@ class TrackerGUI(tk.Frame):
             cmd += ["--camera", self.cam_index.get(),"--camera-sec", self.cam_index_sec.get(),"--camera-doble", "--com", port]
         elif mode == "camera":
             cmd += ["--camera", self.cam_index.get()]
-            messagebox.showinfo("Camara", "No ha seleccionado un puerto COM.\nSe usará unicamente la cámara principal.")
+            if mode == "CamaraRot":
+                port = self.combo_com.get().strip()
+                if not port:
+                    messagebox.showerror("Error", "Seleccione puerto COM.")
+                    return None
+                cmd += ["--modo-rotativa", "--com", port]
         elif mode == "youtube":
             url = self.youtube_url.get().strip()
             if not url:
