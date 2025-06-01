@@ -3,12 +3,16 @@ import sys
 from ultralytics import YOLO
 from pyfirmata2 import Arduino
 import yt_dlp
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import re
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
 # Parametros de la interfaz
 parser = argparse.ArgumentParser(description="Person Tracker con YOLOv8 + click-selector")
 parser.add_argument("--camera", type=int)
+parser.add_argument("--camera-sec", type=int)
 parser.add_argument("--video")
 parser.add_argument("--live", type=str, help="URL o parámetro para obtener stream en vivo")
 parser.add_argument("--youtube", type=str, help="URL de YouTube a utilizar como fuente de video")
@@ -31,10 +35,16 @@ last_det_t, timeout = time.time(), 5
 
 # Inicialización de la placa Arduino y servos
 if args.camera_doble:
-    board = Arduino(args.com); time.sleep(.5)
-    servo_x = board.get_pin("d:9:s")
-    servo_y = board.get_pin("d:10:s")
-    servo_x.write(baseX); servo_y.write(baseY); time.sleep(.5)
+    try:
+        board = Arduino(args.com)
+        time.sleep(0.5)
+        servo_x = board.get_pin("d:9:s")
+        servo_y = board.get_pin("d:10:s")
+        servo_x.write(servoPos[0])
+        servo_y.write(servoPos[1])
+        time.sleep(0.5)
+    except Exception as e:
+        print("Error al inicializar servos:", e)
 
 # Generación de nombre de archivos
 def unico(base_path, ext):
@@ -45,13 +55,19 @@ def unico(base_path, ext):
         i += 1
     return nombre
 
-output_dir = os.path.dirname(args.out_base)
-if output_dir and not os.path.exists(output_dir):
-    os.makedirs(output_dir, exist_ok=True)
+# Crear carpeta 'output' si no existe
+output_dir = "output"
+os.makedirs(output_dir, exist_ok=True)
 
-base = args.out_base
+# Construir ruta base de archivos dentro de 'output'
+base = os.path.join(output_dir, os.path.basename(args.out_base))
+
 vid_out = unico(base, "avi") if not args.no_save else None
-csv_out = unico(base, "csv") if not args.no_save else None
+
+# Extraer nombre base sin extensión para usar en el CSV
+nombre_base = os.path.splitext(os.path.basename(base))[0]
+csv_base = os.path.join(output_dir, f"seguimiento_{nombre_base}")
+csv_out = unico(csv_base, "csv") if not args.no_save else None
 
 # Función para obtener la URL del stream
 def get_stream_url(url):
@@ -67,13 +83,36 @@ def get_stream_url(url):
     raise RuntimeError("No se pudo obtener la URL del stream")
 
 # Inicialización del video o stream
+def get_earthcam_stream(url):
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        driver.get(url)
+        html = driver.page_source
+    except Exception as e:
+        driver.quit()
+        raise RuntimeError(f"No se pudo acceder a la página EarthCam: {e}")
+
+    driver.quit()
+
+    # Buscar URLs .m3u8 en el HTML
+    matches = re.findall(r'https?://[^\s"\']+\.m3u8', html)
+    if not matches:
+        raise RuntimeError("No se encontró ninguna URL de stream (.m3u8) en la página.")
+    
+    return matches[0]
+
 cap = None
 try:
     if args.youtube:
         stream_url = get_stream_url(args.youtube)
         cap = cv2.VideoCapture(stream_url)
     elif args.earthcam:
-        stream_url = get_stream_url(args.earthcam)
+        stream_url = get_earthcam_stream(args.earthcam)
+        print(f"Conectando al stream de EarthCam: {stream_url}")
         cap = cv2.VideoCapture(stream_url)
     elif args.live:
         stream_url = get_stream_url(args.live)
