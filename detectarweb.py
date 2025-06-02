@@ -70,7 +70,7 @@ vid_sec_base = os.path.join(output_dir, f"{nombre_base}_cam_sec")
 vid_out = unico(base, "avi") if not args.no_save else None
 vid_out_sec = unico(vid_sec_base, "avi") if args.camera_sec and not args.no_save else None
 # Si la segunda cámara es el índice 5, usar URL en lugar del índice
-camera_sec_url = "http://192.168.0.105:4747/video" if args.camera_sec == 5 else None
+camera_sec_url = "http://192.168.0.102:4747/video" if args.camera_sec == 5 else None
 
 # Extraer nombre base sin extensión para usar en el CSV
 csv_base = os.path.join(output_dir, f"seguimiento_{nombre_base}")
@@ -148,13 +148,11 @@ if args.camera_doble and args.camera_sec is not None:
     cap_sec.set(cv2.CAP_PROP_FRAME_HEIGHT, res_h)
     cap_sec.set(cv2.CAP_PROP_FPS, fps)
 
-
-
 fourcc = cv2.VideoWriter_fourcc(*"XVID")
 out = cv2.VideoWriter(vid_out, fourcc, fps, (res_w, res_h)) if vid_out else None
 out_sec = cv2.VideoWriter(vid_out_sec, fourcc, fps, (res_w, res_h)) if vid_out_sec and args.camera_sec else None
 
-model = YOLO("yolov8m.pt")
+model = YOLO("yolov10n.pt")
 seguido_id, next_id = None, 0
 cands, log = {}, []
 UMBRAL = 50
