@@ -176,8 +176,9 @@ class TrackerGUI(tk.Frame):
 
     def get_arduino_ports(self):
         ports = list_ports.comports()
-        return [port.device for port in ports if "Arduino" in port.description or "CH340" in port.description or "ttyUSB" in port.device] or [port.device for port in ports]
-
+        portsUsados =  [port.device for port in ports if "Arduino" in port.description or "CH340" in port.description or "ttyUSB" in port.device] or [port.device for port in ports]
+        return portsUsados + [""]
+    
     def _build_cmd(self, save_output=True):
         mode = self.input_mode.get()
         out_base = self.out_base.get().strip()
@@ -200,7 +201,7 @@ class TrackerGUI(tk.Frame):
 
         script_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
         if ("Human Tracker.exe" in sys.executable) :
-            script =  os.path.join(script_dir, "detectarweb.exe") # usamos el .exe directamente
+            script = os.path.join(script_dir, "detectarweb.exe") # usamos el .exe directamente
             cmd =  [script, "--out-base", out_base, "--fps", fps, "--resolution", resolution] 
         else:
             script = os.path.join(script_dir, "detectarweb.py") 

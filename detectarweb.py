@@ -26,9 +26,11 @@ parser.add_argument("--fps", type=float, default=30.0)
 parser.add_argument("--no-save", action="store_true", help="No guardar archivos")
 args = parser.parse_args()
 
-# Variables de la base rotativa
+# Validación de funciones avanzadas
 res_w, res_h = map(int, args.resolution.split("x"))
 fps = args.fps
+
+# Variables de la base rotativa
 baseX, baseY = 80, 100
 servoPos = [baseX, baseY]
 last_det_t, timeout = time.time(), 5
@@ -62,10 +64,15 @@ os.makedirs(output_dir, exist_ok=True)
 # Construir ruta base de archivos dentro de 'output'
 base = os.path.join(output_dir, os.path.basename(args.out_base))
 
+nombre_base = os.path.splitext(os.path.basename(base))[0]
+vid_sec_base = os.path.join(output_dir, f"{nombre_base}_cam_sec")
+
 vid_out = unico(base, "avi") if not args.no_save else None
+vid_out_sec = unico(vid_sec_base, "avi") if args.camera_sec and not args.no_save else None
+# Si la segunda cámara es el índice 5, usar URL en lugar del índice
+camera_sec_url = "http://192.168.0.105:4747/video" if args.camera_sec == 5 else None
 
 # Extraer nombre base sin extensión para usar en el CSV
-nombre_base = os.path.splitext(os.path.basename(base))[0]
 csv_base = os.path.join(output_dir, f"seguimiento_{nombre_base}")
 csv_out = unico(csv_base, "csv") if not args.no_save else None
 
@@ -132,8 +139,20 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH,  res_w)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res_h)
 cap.set(cv2.CAP_PROP_FPS,          fps)
 
+# Configuración de la cámara secundaria
+cap_sec = None
+if args.camera_doble and args.camera_sec is not None:
+    fuente_secundaria = camera_sec_url if camera_sec_url else args.camera_sec
+    cap_sec = cv2.VideoCapture(fuente_secundaria)
+    cap_sec.set(cv2.CAP_PROP_FRAME_WIDTH, res_w)
+    cap_sec.set(cv2.CAP_PROP_FRAME_HEIGHT, res_h)
+    cap_sec.set(cv2.CAP_PROP_FPS, fps)
+
+
+
 fourcc = cv2.VideoWriter_fourcc(*"XVID")
 out = cv2.VideoWriter(vid_out, fourcc, fps, (res_w, res_h)) if vid_out else None
+out_sec = cv2.VideoWriter(vid_out_sec, fourcc, fps, (res_w, res_h)) if vid_out_sec and args.camera_sec else None
 
 model = YOLO("yolov8m.pt")
 seguido_id, next_id = None, 0
@@ -182,7 +201,7 @@ def move_servos(cx,cy):
     global servoPos
     errx, erry = (res_w//2-cx), (cy-res_h//2)
     servoPos[0]=np.clip(servoPos[0]+0.05*errx, 0,180)
-    servoPos[1]=np.clip(servoPos[1]+0.03*erry, 75,120)
+    servoPos[1]=np.clip(servoPos[1]-0.03*erry, 75,120)
     servo_x.write(servoPos[0]); servo_y.write(servoPos[1])
 
 # Bucle principal de captura y procesamiento
@@ -208,16 +227,36 @@ while True:
             log.append((int(cap.get(cv2.CAP_PROP_POS_FRAMES)), idv, zona))
             if args.camera_doble: move_servos(cx,cy)
     if args.camera_doble and time.time()-last_det_t>timeout:
-        servo_x.write(baseX); servo_y.write(baseY); servoPos=[baseX,baseY]
+        servo_x.write(baseX)
+        servo_y.write(baseY)
+        servoPos=[baseX,baseY]
     if out: out.write(frame)
     cv2.imshow("Seguimiento de persona", frame)
+
+    # Procesamiento de la cámara secundaria
+    frame_combined = frame
+    if cap_sec:
+        ret2, frame2 = cap_sec.read()
+        if ret2:
+            if frame2.shape[1] != res_w or frame2.shape[0] != res_h:
+                frame2 = cv2.resize(frame2, (res_w, res_h))
+            # Concatenar las dos cámaras verticalmente (tipo Nintendo DS)
+            frame_combined = np.vstack((frame, frame2))
+            if out_sec: out_sec.write(frame2)
+
+    # Mostrar las dos cámaras en una sola ventana
+    cv2.imshow("Seguimiento de persona", frame_combined)
+
     if cv2.waitKey(1)&0xFF==27: break
 
 # Finalización y limpieza
-if args.camera_doble: board.exit()
-cap.release(); cv2.destroyAllWindows()
+cap.release()
+cv2.destroyAllWindows()
 if out: out.release()
+if out_sec: out_sec.release()
 if csv_out:
     with open(csv_out,"w",newline="") as f:
         csv.writer(f).writerows([("frame","id","zona"),*log])
+if cap_sec:  cap_sec.release()
+if args.camera_doble: board.exit()
 print("Finalizado.")

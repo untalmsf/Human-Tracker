@@ -11,6 +11,6 @@ Repositorio para Construcción de Sistemas de Computación
 
 ### Si NO existen las carpetas /dist y /build
 
-#### pyinstaller analisisDatos.py
-#### pyinstaller detectarweb.py
+#### pyinstaller analisisDatos.py --onefile --noconsole 
+#### pyinstaller detectarweb.py --onefile --noconsole
 #### pyinstaller --onefile --name "Human Tracker" --console --add-data "logo.png:." --add-data "untrefLogo.jpg:." --icon=logo.ico interfaz.py
