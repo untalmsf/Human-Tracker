@@ -138,7 +138,7 @@ class TrackerGUI(tk.Frame):
         self.resolution_combo.grid(row=11, column=1, sticky="w", pady=2)
 
         self.draw_boxes = tk.BooleanVar(value=True)
-        tk.Checkbutton(scrollable_frame, text="Bounding boxes", variable=self.draw_boxes).grid(row=12, column=1, columnspan=3, sticky="w", pady=2)
+        tk.Checkbutton(scrollable_frame, text="Recuadros de personas", variable=self.draw_boxes).grid(row=12, column=1, columnspan=3, sticky="w", pady=2)
 
         # Botones de acción
         self.btn_start_nosave = tk.Button(scrollable_frame, text="Procesar sin guardar", command=self.start_tracking_no_save, width=20, height=2)

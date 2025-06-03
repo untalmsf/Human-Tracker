@@ -69,8 +69,6 @@ vid_sec_base = os.path.join(output_dir, f"{nombre_base}_cam_sec")
 
 vid_out = unico(base, "avi") if not args.no_save else None
 vid_out_sec = unico(vid_sec_base, "avi") if args.camera_sec and not args.no_save else None
-# Si la segunda cámara es el índice 5, usar URL en lugar del índice
-camera_sec_url = "http://192.168.0.102:4747/video" if args.camera_sec == 5 else None
 
 # Extraer nombre base sin extensión para usar en el CSV
 csv_base = os.path.join(output_dir, f"seguimiento_{nombre_base}")
@@ -142,8 +140,7 @@ cap.set(cv2.CAP_PROP_FPS,          fps)
 # Configuración de la cámara secundaria
 cap_sec = None
 if args.camera_doble and args.camera_sec is not None:
-    fuente_secundaria = camera_sec_url if camera_sec_url else args.camera_sec
-    cap_sec = cv2.VideoCapture(fuente_secundaria)
+    cap_sec = cv2.VideoCapture(args.camera_sec)
     cap_sec.set(cv2.CAP_PROP_FRAME_WIDTH, res_w)
     cap_sec.set(cv2.CAP_PROP_FRAME_HEIGHT, res_h)
     cap_sec.set(cv2.CAP_PROP_FPS, fps)
@@ -197,10 +194,25 @@ def associate(nuevos):
 # Función para mover los servos de la base rotativa
 def move_servos(cx,cy):
     global servoPos
-    errx, erry = (res_w//2-cx), (cy-res_h//2)
-    servoPos[0]=np.clip(servoPos[0]+0.05*errx, 0,180)
-    servoPos[1]=np.clip(servoPos[1]-0.03*erry, 75,120)
-    servo_x.write(servoPos[0]); servo_y.write(servoPos[1])
+    # Campo de visión estimado de la cámara
+    fov_x = 110  # grados horizontal
+    fov_y = 60   # grados vertical aproximado
+
+    # Diferencia en píxeles desde el centro de la imagen
+    dx = cx - (res_w // 2)
+    dy = cy - (res_h // 2)
+
+    # Convertir la diferencia de píxeles a ángulo
+    angle_x = (dx / res_w) * fov_x
+    angle_y = (dy / res_h) * fov_y
+
+    # Calcular nuevos ángulos absolutos a partir del centro (base)
+    new_x = np.clip(baseX - angle_x, 0, 180)
+    new_y = np.clip(baseY - angle_y, 75, 120)  # eje invertido para Y
+
+    servoPos = [new_x, new_y]
+    servo_x.write(new_x)
+    servo_y.write(new_y)
 
 # Bucle principal de captura y procesamiento
 while True:
@@ -229,10 +241,8 @@ while True:
         servo_y.write(baseY)
         servoPos=[baseX,baseY]
     if out: out.write(frame)
-    cv2.imshow("Seguimiento de persona", frame)
 
     # Procesamiento de la cámara secundaria
-    frame_combined = frame
     if cap_sec:
         ret2, frame2 = cap_sec.read()
         if ret2:
@@ -241,9 +251,11 @@ while True:
             # Concatenar las dos cámaras verticalmente (tipo Nintendo DS)
             frame_combined = np.vstack((frame, frame2))
             if out_sec: out_sec.write(frame2)
-
-    # Mostrar las dos cámaras en una sola ventana
-    cv2.imshow("Seguimiento de persona", frame_combined)
+        else:
+            frame_combined = frame  # fallback si falla cap_sec
+        cv2.imshow("Seguimiento de persona", frame_combined)
+    else:
+        cv2.imshow("Seguimiento de persona", frame)
 
     if cv2.waitKey(1)&0xFF==27: break
 

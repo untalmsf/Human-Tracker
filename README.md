@@ -7,7 +7,7 @@ Repositorio para Construcción de Sistemas de Computación
 
 #### pyinstaller analisisDatos.spec
 #### pyinstaller detectarweb.spec
-#### pyinstaller Human Tracker.spec
+#### pyinstaller "Human Tracker.spec"
 
 ### Si NO existen las carpetas /dist y /build
 
