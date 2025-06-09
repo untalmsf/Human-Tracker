@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from serial.tools import list_ports
 import sys
+import platform
 
 def resource_path(relative_path):
     base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
@@ -83,11 +84,11 @@ class TrackerGUI(tk.Frame):
         tk.Radiobutton(scrollable_frame, text="Video", variable=self.input_mode, value="video", command=self.on_mode_change).grid(row=7, column=0, sticky="w")
 
         # Parametros de camara
-        self.cam_index = tk.Spinbox(scrollable_frame, from_=0, to=2, width=5)
+        self.cam_index = tk.Spinbox(scrollable_frame, from_=0, to=4, width=5)
         self.cam_index.grid(row=4, column=1, sticky="w")
 
         # Parametros de camara secundaria y arduino
-        self.cam_index_sec = tk.Spinbox(scrollable_frame, from_=0, to=2, width=5)
+        self.cam_index_sec = tk.Spinbox(scrollable_frame, from_=0, to=4, width=5)
         self.cam_index_sec.grid(row=5, column=1, sticky="w")
         self.label_com = tk.Label(scrollable_frame, text="Puerto COM:").grid(row=5, column=2, sticky="e")
         self.combo_com = ttk.Combobox(scrollable_frame, values=self.get_arduino_ports(), width=15)
@@ -126,29 +127,53 @@ class TrackerGUI(tk.Frame):
         self.out_base.insert(0, "output")
         self.out_base.grid(row=9, column=1, columnspan=2, sticky="w", pady=2)
 
+        tk.Label(scrollable_frame, text="Sencibilidad X:").grid(row=9, column=2, sticky="e", pady=2)
+        gainX = tk.StringVar(root)
+        gainX.set("1.0")
+        self.gainX_entry = tk.Spinbox(scrollable_frame, width=10, from_=0, to=100, increment=0.001, format="%.3f", textvariable=gainX)
+        self.gainX_entry.grid(row=9, column=3, sticky="w", pady=2)
+        
         tk.Label(scrollable_frame, text="FPS:").grid(row=10, column=0, sticky="e", pady=2)
         fps = tk.StringVar(root)
         fps.set("30")
-        self.fps_entry = tk.Spinbox(scrollable_frame, width=10, from_=0, to=120, textvariable=fps)
+        self.fps_entry = tk.Spinbox(scrollable_frame, width=10, from_=0, to=100, textvariable=fps)
         self.fps_entry.grid(row=10, column=1, sticky="w", pady=2)
+
+        tk.Label(scrollable_frame, text="Sencibilidad Y:").grid(row=10, column=2, sticky="e", pady=2)
+        gainY = tk.StringVar(root)
+        gainY.set("1.0")
+        self.gainY_entry = tk.Spinbox(scrollable_frame, width=10, from_=0.0, to=120.0, increment=0.001, format="%.3f", textvariable=gainY)
+        self.gainY_entry.grid(row=10, column=3, sticky="w", pady=2)
 
         tk.Label(scrollable_frame, text="Resolución:").grid(row=11, column=0, sticky="e", pady=2)
         self.resolution_combo = ttk.Combobox(scrollable_frame, values=["640x480", "1280x720", "1920x1080"], width=15)
         self.resolution_combo.set("640x480")
         self.resolution_combo.grid(row=11, column=1, sticky="w", pady=2)
 
+        tk.Label(scrollable_frame, text="Zoom (%):").grid(row=11, column=2, sticky="e", pady=2)
+        zoom_value = tk.StringVar(root)
+        zoom_value.set("100")  # 100% = sin zoom
+        self.zoom_slider = tk.Scale(scrollable_frame, from_=100, to=200, resolution=1, orient="horizontal", variable=zoom_value)
+        self.zoom_slider.grid(row=11, column=3)
+
         self.draw_boxes = tk.BooleanVar(value=True)
         tk.Checkbutton(scrollable_frame, text="Recuadros de personas", variable=self.draw_boxes).grid(row=12, column=1, columnspan=3, sticky="w", pady=2)
+
+        self.vidriera_mode = tk.BooleanVar(value=False)
+        tk.Checkbutton(scrollable_frame, text="Modo Vidriera", variable=self.vidriera_mode).grid(row=12, column=3, sticky="w", pady=2)
 
         # Botones de acción
         self.btn_start_nosave = tk.Button(scrollable_frame, text="Procesar sin guardar", command=self.start_tracking_no_save, width=20, height=2)
         self.btn_start_nosave.grid(row=13, column=0, columnspan=2, pady=10)
 
         self.btn_start = tk.Button(scrollable_frame, text="Procesar y guardar", command=self.start_tracking, width=20, height=2)
-        self.btn_start.grid(row=13, column=2, columnspan=2, pady=10, padx=25, sticky="w")
+        self.btn_start.grid(row=13, column=2, columnspan=2, pady=10)
 
         self.btn_analyze = tk.Button(scrollable_frame, text="Analizar CSV", command=self.analyze_csv)
-        self.btn_analyze.grid(row=14, column=0, columnspan=4, pady=10)
+        self.btn_analyze.grid(row=14, column=0, columnspan=2, pady=10)
+
+        self.btn_abrir_salida = tk.Button(scrollable_frame, text="Abrir Carpeta", command=self.abrir_carpeta_salida)
+        self.btn_abrir_salida.grid(row=14, column=2, columnspan=2, pady=10)
 
         image2 = Image.open(resource_path("untrefLogo.jpg")).resize((250, 100))
         self.logo_img2 = ImageTk.PhotoImage(image2)
@@ -202,16 +227,20 @@ class TrackerGUI(tk.Frame):
         script_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
         if ("Human Tracker.exe" in sys.executable) :
             script = os.path.join(script_dir, "detectarweb.exe") # usamos el .exe directamente
-            cmd =  [script, "--out-base", out_base, "--fps", fps, "--resolution", resolution] 
+            cmd = [script, "--out-base", out_base, "--fps", fps, "--resolution", resolution,
+                     "--gainX", self.gainX_entry.get(), "--gainY", self.gainY_entry.get(), "--zoom", str(self.zoom_slider.get())]
         else:
             script = os.path.join(script_dir, "detectarweb.py") 
-            cmd = ["python", script, "--out-base", out_base, "--fps", fps, "--resolution", resolution]
-
+            cmd = ["python", script, "--out-base", out_base, "--fps", fps, "--resolution", resolution,
+                     "--gainX", self.gainX_entry.get(), "--gainY", self.gainY_entry.get(), "--zoom", str(self.zoom_slider.get())]
         if not save_output:
             cmd.append("--no-save")
 
         if not self.draw_boxes.get():
             cmd.append("--no-boxes")
+
+        if self.vidriera_mode.get():
+            cmd.append("--vidriera-mode")
         
         port = self.combo_com.get().strip()
 
@@ -266,6 +295,12 @@ class TrackerGUI(tk.Frame):
                 plt.show()
             except Exception as e:
                 messagebox.showerror("Error", str(e))
+
+    def abrir_carpeta_salida(self):
+        output_path = os.path.join(os.getcwd(), "output")
+        os.makedirs(output_path, exist_ok=True)  # Asegura que exista
+        if platform.system() == "Windows":
+            os.startfile(output_path)
 
 # Ejecutar
 root = tk.Tk()

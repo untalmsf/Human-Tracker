@@ -17,13 +17,17 @@ parser.add_argument("--video")
 parser.add_argument("--live", type=str, help="URL o parámetro para obtener stream en vivo")
 parser.add_argument("--youtube", type=str, help="URL de YouTube a utilizar como fuente de video")
 parser.add_argument("--earthcam", type=str, help="URL de EarthCam a utilizar como fuente de video")
-parser.add_argument("--out-base", required=True)
-parser.add_argument("--no-boxes", action="store_true")
-parser.add_argument("--camera-doble", action="store_true")
-parser.add_argument("--com")
+parser.add_argument("--out-base", required=True, help="Ruta base para guardar los archivos de salida")
+parser.add_argument("--no-boxes", action="store_true", help="No dibujar cuadros alrededor de las personas detectadas")
+parser.add_argument("--camera-doble", action="store_true", help="Usar cámara secundaria")
+parser.add_argument("--com", help="Puerto COM para la placa Arduino")
 parser.add_argument("--resolution", default="640x480")
 parser.add_argument("--fps", type=float, default=30.0)
+parser.add_argument("--gainX", type=float, default=1.0, help="Ganancia de la cámara X")
+parser.add_argument("--gainY", type=float, default=1.0, help="Ganancia de la cámara Y")
+parser.add_argument("--zoom", type=float, default=110.0, help="Zoom de la cámara")
 parser.add_argument("--no-save", action="store_true", help="No guardar archivos")
+parser.add_argument("--vidriera-mode", action="store_true", help="Modo depuración")
 args = parser.parse_args()
 
 # Validación de funciones avanzadas
@@ -203,8 +207,8 @@ def move_servos(cx,cy):
     dy = cy - (res_h // 2)
 
     # Convertir la diferencia de píxeles a ángulo
-    angle_x = (dx / res_w) * fov_x
-    angle_y = (dy / res_h) * fov_y
+    angle_x = ((dx / res_w) * fov_x) + args.gainX
+    angle_y = ((dy / res_h) * fov_y) * args.gainY
 
     # Calcular nuevos ángulos absolutos a partir del centro (base)
     new_x = np.clip(baseX - angle_x, 0, 180)
@@ -213,6 +217,27 @@ def move_servos(cx,cy):
     servoPos = [new_x, new_y]
     servo_x.write(new_x)
     servo_y.write(new_y)
+
+def zoom(frame, zoom_pct):
+    if zoom_pct <= 100:
+        return frame  # sin zoom o reducción no aplicada
+
+    zoom_factor = zoom_pct / 100.0
+    h, w = frame.shape[:2]
+
+    # Calculamos el tamaño de recorte
+    new_w = int(w / zoom_factor)
+    new_h = int(h / zoom_factor)
+
+    # Coordenadas para recorte centrado
+    x1 = (w - new_w) // 2
+    y1 = (h - new_h) // 2
+    x2 = x1 + new_w
+    y2 = y1 + new_h
+
+    cropped = frame[y1:y2, x1:x2]
+    return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+
 
 # Bucle principal de captura y procesamiento
 while True:
@@ -224,18 +249,28 @@ while True:
         frame=cv2.resize(frame,(res_w,res_h))
     vis = associate(detect(frame))
     if seguido_id is None and vis: seguido_id=vis[0][0]
-    zona_w = res_w//4
-    for i in range(1,4): cv2.line(frame,(i*zona_w,0),(i*zona_w,res_h),(200,200,200),2)
-    for idv,(cx,cy),x,y,w,h in vis:
-        color=(0,255,0) if idv==seguido_id else (255,0,0)
+    
+    if args.vidriera_mode:
+        zona_w = res_w // 4
+        for i in range(1, 4):
+            cv2.line(frame, (i * zona_w, 0), (i * zona_w, res_h), (200, 200, 200), 2)
+
+    for idv, (cx, cy), x, y, w, h in vis:
+        color = (0, 255, 0) if idv == seguido_id else (255, 0, 0)
         if not args.no_boxes:
-            cv2.rectangle(frame,(x,y),(x+w,y+h),color,2)
-            cv2.putText(frame,f"ID:{idv}",(x,y-10),cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
-        if idv==seguido_id:
-            last_det_t=time.time()
-            zona=etiquetas[min(cx//zona_w,3)]
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            cv2.putText(frame, f"ID:{idv}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        if idv == seguido_id:
+            last_det_t = time.time()
+            if args.vidriera_mode:
+                zona = etiquetas[min(cx // (res_w // 4), 3)]
+            else:
+                zona = "General"
             log.append((int(cap.get(cv2.CAP_PROP_POS_FRAMES)), idv, zona))
-            if args.camera_doble: move_servos(cx,cy)
+            if args.camera_doble:
+                move_servos(cx, cy)
+
+
     if args.camera_doble and time.time()-last_det_t>timeout:
         servo_x.write(baseX)
         servo_y.write(baseY)
@@ -246,8 +281,7 @@ while True:
     if cap_sec:
         ret2, frame2 = cap_sec.read()
         if ret2:
-            if frame2.shape[1] != res_w or frame2.shape[0] != res_h:
-                frame2 = cv2.resize(frame2, (res_w, res_h))
+            frame2 = zoom(frame2, args.zoom)
             # Concatenar las dos cámaras verticalmente (tipo Nintendo DS)
             frame_combined = np.vstack((frame, frame2))
             if out_sec: out_sec.write(frame2)
