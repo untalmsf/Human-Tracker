@@ -153,10 +153,14 @@ fourcc = cv2.VideoWriter_fourcc(*"XVID")
 out = cv2.VideoWriter(vid_out, fourcc, fps, (res_w, res_h)) if vid_out else None
 out_sec = cv2.VideoWriter(vid_out_sec, fourcc, fps, (res_w, res_h)) if vid_out_sec and args.camera_sec else None
 
+# Variables del seguidor de personas
 model = YOLO("yolov10n.pt")
 seguido_id, next_id = None, 0
 cands, log = {}, []
 UMBRAL = 50
+id_actual = None
+persona_actual = None
+frames_perdido = 0
 etiquetas = ["Izquierda", "Centro-Izq", "Centro-Der", "Derecha"]
 
 # Función para seleccion de persona con click
@@ -248,28 +252,56 @@ while True:
     if frame.shape[1]!=res_w or frame.shape[0]!=res_h:
         frame=cv2.resize(frame,(res_w,res_h))
     vis = associate(detect(frame))
-    if seguido_id is None and vis: seguido_id=vis[0][0]
     
-    if args.vidriera_mode:
-        zona_w = res_w // 4
-        for i in range(1, 4):
-            cv2.line(frame, (i * zona_w, 0), (i * zona_w, res_h), (200, 200, 200), 2)
+    # Lógica de seguimiento con cambio automático si se pierde el objetivo
+    personas_detectadas = [{"id": idv, "centro": (cx, cy)} for idv, (cx, cy), *_ in vis]
 
+    if id_actual is not None:
+        if id_actual in [p['id'] for p in personas_detectadas]:
+            # Seguimos al mismo objetivo
+            frames_perdido = 0
+            persona_actual = next(p for p in personas_detectadas if p['id'] == id_actual)
+        else:
+            # Objetivo no está en esta frame
+            frames_perdido += 1
+            if frames_perdido >= 2:
+                # Buscar nuevo objetivo
+                if personas_detectadas:
+                    centro_pantalla_x = frame.shape[1] // 2
+                    persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_pantalla_x))
+                    id_actual = persona_actual['id']
+                    frames_perdido = 0
+                else:
+                    persona_actual = None
+            else:
+                persona_actual = None
+    else:
+        # No hay objetivo actual, elegimos uno si hay personas
+        if personas_detectadas:
+            centro_pantalla_x = frame.shape[1] // 2
+            persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_pantalla_x))
+            id_actual = persona_actual['id']
+            frames_perdido = 0
+        else:
+            persona_actual = None
+
+    # Dibujar bounding boxes y mover el servo
     for idv, (cx, cy), x, y, w, h in vis:
-        color = (0, 255, 0) if idv == seguido_id else (255, 0, 0)
+        color = (0, 255, 0) if persona_actual and idv == persona_actual['id'] else (255, 0, 0)
         if not args.no_boxes:
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             cv2.putText(frame, f"ID:{idv}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-        if idv == seguido_id:
-            last_det_t = time.time()
-            if args.vidriera_mode:
-                zona = etiquetas[min(cx // (res_w // 4), 3)]
-            else:
-                zona = "General"
-            log.append((int(cap.get(cv2.CAP_PROP_POS_FRAMES)), idv, zona))
-            if args.camera_doble:
-                move_servos(cx, cy)
 
+    if persona_actual:
+        last_det_t = time.time()
+        cx, cy = persona_actual['centro']
+        if args.vidriera_mode:
+            zona = etiquetas[min(cx // (res_w // 4), 3)]
+        else:
+            zona = "General"
+        log.append((int(cap.get(cv2.CAP_PROP_POS_FRAMES)), persona_actual['id'], zona))
+        if args.camera_doble:
+            move_servos(cx, cy)
 
     if args.camera_doble and time.time()-last_det_t>timeout:
         servo_x.write(baseX)
