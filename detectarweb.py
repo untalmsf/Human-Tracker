@@ -6,6 +6,8 @@ import yt_dlp
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import re
+import tkinter as tk
+from PIL import Image, ImageTk
 
 warnings.filterwarnings("ignore", message=".*autocast.*")
 
@@ -164,22 +166,24 @@ frames_perdido = 0
 etiquetas = ["Izquierda", "Centro-Izq", "Centro-Der", "Derecha"]
 
 # Función para seleccion de persona con click
-def click(event, x, y, flags, param):
-    global seguido_id
-    if event == cv2.EVENT_LBUTTONDOWN:
-        for i, (centro, x1, y1, w, h) in cands.items():
-            if x1 < x < x1+w and y1 < y < y1+h:
-                seguido_id = i; break
+def click_tkinter(event):
+    global id_actual
+    canvas_x, canvas_y = event.x, event.y
 
-cv2.namedWindow("Seguimiento de persona")
-cv2.setMouseCallback("Seguimiento de persona", click)
+    # Suponiendo que el frame se muestra en (0, 0) sin escalado
+    for i, (centro, x1, y1, w, h) in cands.items():
+        if x1 <= canvas_x <= x1 + w and y1 <= canvas_y <= y1 + h:
+            id_actual = i
+            print(f"Persona seleccionada: ID {id_actual}")
+            break
 
 # Función para detectar personas
 def detect(frame):
-    r = model.predict(frame, imgsz=640, conf=0.6, verbose=False)[0]
+    confianza = 0.4
+    r = model.predict(frame, imgsz=640, conf=confianza, verbose=False)[0]
     outs=[]
     for b in r.boxes:
-        if int(b.cls[0])==0 and float(b.conf[0])>0.6:
+        if int(b.cls[0])==0 and float(b.conf[0])>confianza:
             x1,y1,x2,y2=b.xyxy[0].tolist(); w,h=x2-x1,y2-y1
             outs.append(((int(x1+w/2),int(y1+h/2)), int(x1),int(y1),int(w),int(h)))
     return outs
@@ -242,41 +246,65 @@ def zoom(frame, zoom_pct):
     cropped = frame[y1:y2, x1:x2]
     return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
+# Parámetro interno de opacidad para la cámara secundaria
+opacidad_secundaria = 0.5  # entre 0.0 y 1.0
 
-# Bucle principal de captura y procesamiento
-while True:
-    if cv2.getWindowProperty("Seguimiento de persona", cv2.WND_PROP_VISIBLE) < 1:
-        break
+# Inicializar ventana Tkinter
+root = tk.Tk()
+root.title("Seguimiento de persona")
+
+root.lift()
+root.attributes('-topmost', True)
+root.after(1000, lambda: root.attributes('-topmost', False))
+
+root.state("zoomed")  # maximizar ventana en Windows
+root.configure(bg="black")
+
+# Canvas principal (cámara principal)
+canvas = tk.Canvas(root, bg="black", highlightthickness=0)
+canvas.pack(fill=tk.BOTH, expand=True)
+canvas.bind("<Button-1>", click_tkinter)
+
+# Posición secundaria fija
+sec_w, sec_h = 640, 480
+
+if args.camera_doble and args.camera_sec is not None:
+    # Canvas secundario (cámara secundaria)
+    canvas_sec = tk.Canvas(root, width=sec_w, height=sec_h, bg="black", highlightthickness=2)
+    canvas_sec.place(relx=1.0, rely=1.0, anchor="se")  # esquina inferior derecha
+
+# Bucle de actualización de frames
+def actualizar_frame():
+    global frame, frame2, last_det_t
+
     ret, frame = cap.read()
-    if not ret: break
-    if frame.shape[1]!=res_w or frame.shape[0]!=res_h:
-        frame=cv2.resize(frame,(res_w,res_h))
+    if not ret:
+        root.after(10, actualizar_frame)
+        return
+
+    if frame.shape[1] != res_w or frame.shape[0] != res_h:
+        frame = cv2.resize(frame, (res_w, res_h))
+
     vis = associate(detect(frame))
-    
-    # Lógica de seguimiento con cambio automático si se pierde el objetivo
+
+    # Seguimiento
     personas_detectadas = [{"id": idv, "centro": (cx, cy)} for idv, (cx, cy), *_ in vis]
+    global id_actual, persona_actual, frames_perdido
 
     if id_actual is not None:
         if id_actual in [p['id'] for p in personas_detectadas]:
-            # Seguimos al mismo objetivo
             frames_perdido = 0
             persona_actual = next(p for p in personas_detectadas if p['id'] == id_actual)
         else:
-            # Objetivo no está en esta frame
             frames_perdido += 1
-            if frames_perdido >= 2:
-                # Buscar nuevo objetivo
-                if personas_detectadas:
-                    centro_pantalla_x = frame.shape[1] // 2
-                    persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_pantalla_x))
-                    id_actual = persona_actual['id']
-                    frames_perdido = 0
-                else:
-                    persona_actual = None
+            if frames_perdido >= 2 and personas_detectadas:
+                centro_pantalla_x = frame.shape[1] // 2
+                persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_pantalla_x))
+                id_actual = persona_actual['id']
+                frames_perdido = 0
             else:
                 persona_actual = None
     else:
-        # No hay objetivo actual, elegimos uno si hay personas
         if personas_detectadas:
             centro_pantalla_x = frame.shape[1] // 2
             persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_pantalla_x))
@@ -285,7 +313,7 @@ while True:
         else:
             persona_actual = None
 
-    # Dibujar bounding boxes y mover el servo
+    # Dibujar cajas
     for idv, (cx, cy), x, y, w, h in vis:
         color = (0, 255, 0) if persona_actual and idv == persona_actual['id'] else (255, 0, 0)
         if not args.no_boxes:
@@ -303,27 +331,42 @@ while True:
         if args.camera_doble:
             move_servos(cx, cy)
 
-    if args.camera_doble and time.time()-last_det_t>timeout:
+    if args.camera_doble and time.time() - last_det_t > timeout:
         servo_x.write(baseX)
         servo_y.write(baseY)
-        servoPos=[baseX,baseY]
-    if out: out.write(frame)
+        servoPos = [baseX, baseY]
 
-    # Procesamiento de la cámara secundaria
-    if cap_sec:
+    if out:
+        out.write(frame)
+
+    # Combinar cámaras
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    img_pil = Image.fromarray(frame_rgb)
+
+    if args.camera_doble and cap_sec:
         ret2, frame2 = cap_sec.read()
         if ret2:
             frame2 = zoom(frame2, args.zoom)
-            # Concatenar las dos cámaras verticalmente (tipo Nintendo DS)
-            frame_combined = np.vstack((frame, frame2))
-            if out_sec: out_sec.write(frame2)
-        else:
-            frame_combined = frame  # fallback si falla cap_sec
-        cv2.imshow("Seguimiento de persona", frame_combined)
-    else:
-        cv2.imshow("Seguimiento de persona", frame)
+            if out_sec:
+                out_sec.write(frame2)
+            frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB)
+            img2_pil = Image.fromarray(frame2).resize((sec_w, sec_h))
+            img2_tk = ImageTk.PhotoImage(img2_pil)
+            canvas_sec.img_tk = img2_tk  # prevenir garbage collection
+            canvas_sec.create_image(0, 0, anchor=tk.NW, image=img2_tk)
 
-    if cv2.waitKey(1)&0xFF==27: break
+    # Mostrar en canvas
+    img_tk = ImageTk.PhotoImage(img_pil)
+    canvas.img_tk = img_tk  # prevenir garbage collection
+    canvas.create_image(0, 0, anchor=tk.NW, image=img_tk)
+
+    root.after(1, actualizar_frame)
+
+# Iniciar bucle
+actualizar_frame()
+root.mainloop()
+
+
 
 # Finalización y limpieza
 cap.release()

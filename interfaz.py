@@ -146,7 +146,7 @@ class TrackerGUI(tk.Frame):
         self.gainY_entry.grid(row=10, column=3, sticky="w", pady=2)
 
         tk.Label(scrollable_frame, text="Resolución:").grid(row=11, column=0, sticky="e", pady=2)
-        self.resolution_combo = ttk.Combobox(scrollable_frame, values=["640x480", "1280x720", "1920x1080"], width=15)
+        self.resolution_combo = ttk.Combobox(scrollable_frame, values=["640x480", "1280x720", "1800x900"], width=15)
         self.resolution_combo.set("640x480")
         self.resolution_combo.grid(row=11, column=1, sticky="w", pady=2)
 
