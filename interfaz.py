@@ -169,11 +169,8 @@ class TrackerGUI(tk.Frame):
         self.btn_start = tk.Button(scrollable_frame, text="Procesar y guardar", command=self.start_tracking, width=20, height=2)
         self.btn_start.grid(row=13, column=2, columnspan=2, pady=10)
 
-        self.btn_analyze = tk.Button(scrollable_frame, text="Analizar CSV", command=self.analyze_csv)
-        self.btn_analyze.grid(row=14, column=0, columnspan=2, pady=10)
-
         self.btn_abrir_salida = tk.Button(scrollable_frame, text="Abrir Carpeta", command=self.abrir_carpeta_salida)
-        self.btn_abrir_salida.grid(row=14, column=2, columnspan=2, pady=10)
+        self.btn_abrir_salida.grid(row=14, column=0, columnspan=4, pady=10)
 
         image2 = Image.open(resource_path("untrefLogo.jpg")).resize((250, 100))
         self.logo_img2 = ImageTk.PhotoImage(image2)
