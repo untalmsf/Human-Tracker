@@ -14,3 +14,7 @@ Repositorio para Construcción de Sistemas de Computación
 #### pyinstaller analisisDatos.py --onefile --noconsole 
 #### pyinstaller detectarweb.py --onefile --noconsole
 #### pyinstaller --onefile --name "Human Tracker" --console --add-data "logo.png:." --add-data "untrefLogo.jpg:." --icon=logo.ico interfaz.py
+
+## Para crear el ejecutable como un unico directorio, no un unico archivo 
+### Si no existen las carpetas /dist y /build
+#### pyinstaller interfaz.py --name="Human Tracker" --onedir --noconsole --add-data "logo.png;." --add-data "untrefLogo.jpg;." --hidden-import=detectarweb --hidden-import=analisisDatos --hidden-import=yolov10s
