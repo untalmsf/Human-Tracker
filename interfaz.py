@@ -68,7 +68,7 @@ class TrackerGUI(tk.Frame):
         canvas.bind("<Configure>", center_scrollable)
 
 
-        tk.Label(scrollable_frame, text="", padx=50, pady=30).grid(row=0, column=0, sticky="w")
+        tk.Label(scrollable_frame, text="", padx=50, pady=10).grid(row=0, column=0, sticky="w")
         image = Image.open(resource_path("logo.png")).resize((300, 300))
         self.logo_img = ImageTk.PhotoImage(image)
         tk.Label(scrollable_frame, image=self.logo_img).grid(row=1, column=0, columnspan=4, pady=5)
@@ -164,25 +164,80 @@ class TrackerGUI(tk.Frame):
         self.zoom_slider = tk.Scale(self.avanzado_frame, from_=100, to=200, resolution=1, orient="horizontal", variable=zoom_value)
         self.zoom_slider.grid(row=2, column=3)
 
+        # Confianza mínima
+        lbl_conf = tk.Label(self.avanzado_frame, text="Confianza mínima de persona:")
+        lbl_conf.grid(row=3, column=0, sticky="e", pady=2)
+
+        self.conf_threshold = tk.Spinbox(self.avanzado_frame, from_=0.0, to=100.0, increment=1, width=10)
+        self.conf_threshold.delete(0, "end")
+        self.conf_threshold.insert(0, "40")
+        self.conf_threshold.grid(row=3, column=1, sticky="w", pady=2)
+
+        # Base del servo x
+        lbl_servo_x = tk.Label(self.avanzado_frame, text="Base del servo X:")
+        lbl_servo_x.grid(row=3, column=2, sticky="e", pady=2)
+
+        self.servo_base_x = tk.Spinbox(self.avanzado_frame, from_=0, to=180, width=10)
+        self.servo_base_x.delete(0, "end")
+        self.servo_base_x.insert(0, "80")
+        self.servo_base_x.grid(row=3, column=3, sticky="w", pady=2)
+
+        # Frames perdidos
+        lbl_lost = tk.Label(self.avanzado_frame, text="Frames perdidos:")
+        lbl_lost.grid(row=4, column=0, sticky="e", pady=2)
+
+        self.max_lost_frames = tk.Spinbox(self.avanzado_frame, from_=0, to=100, width=10)
+        self.max_lost_frames.delete(0, "end")
+        self.max_lost_frames.insert(0, "3")
+        self.max_lost_frames.grid(row=4, column=1, sticky="w", pady=2)
+
+        # Base del servo y
+        lbl_servo_y = tk.Label(self.avanzado_frame, text="Base del servo Y:")
+        lbl_servo_y.grid(row=4, column=2, sticky="e", pady=2)
+
+        self.servo_base_y = tk.Spinbox(self.avanzado_frame, from_=0, to=180, width=10)
+        self.servo_base_y.delete(0, "end")
+        self.servo_base_y.insert(0, "100")
+        self.servo_base_y.grid(row=4, column=3, sticky="w", pady=2)
+
+        # Frames para mantener el cuadrado
+        lbl_keep = tk.Label(self.avanzado_frame, text="Frames de retención:")
+        lbl_keep.grid(row=5, column=0, sticky="e", pady=2)
+
+        self.keep_frames = tk.Spinbox(self.avanzado_frame, from_=0, to=100, width=10)
+        self.keep_frames.delete(0, "end")
+        self.keep_frames.insert(0, "10")
+        self.keep_frames.grid(row=5, column=1, sticky="w", pady=2)
+
+        # Modelo YOLO
+        lbl_model = tk.Label(self.avanzado_frame, text="Modelo YOLO:")
+        lbl_model.grid(row=5, column=2, sticky="e", pady=2)
+
+        self.yolo_model = ttk.Combobox(self.avanzado_frame, values=["yolov8n", "yolov8s", "yolov8m", "yolov8l", "yolov8x","yolov10n", "yolov10s", "yolov10m", "yolov10l", "yolov10x"], width=15)
+        self.yolo_model.set("yolov10s")
+        self.yolo_model.grid(row=5, column=3, sticky="w", pady=2)
+
+
         self.draw_boxes = tk.BooleanVar(value=True)
-        tk.Checkbutton(self.avanzado_frame, text="Recuadros de personas", variable=self.draw_boxes).grid(row=3, column=1, columnspan=3, sticky="w", pady=2)
+        tk.Checkbutton(self.avanzado_frame, text="Recuadros de personas", variable=self.draw_boxes).grid(row=6, column=1, columnspan=3, sticky="w", pady=2)
 
         self.vidriera_mode = tk.BooleanVar(value=False)
-        tk.Checkbutton(self.avanzado_frame, text="Modo Vidriera", variable=self.vidriera_mode).grid(row=3, column=3, sticky="w", pady=2)
+        tk.Checkbutton(self.avanzado_frame, text="Modo Vidriera", variable=self.vidriera_mode).grid(row=6, column=3, sticky="w", pady=2)
 
         # Botones de acción
         self.btn_start_nosave = tk.Button(scrollable_frame, text="Procesar sin guardar", command=self.start_tracking_no_save, width=20, height=2)
-        self.btn_start_nosave.grid(row=13, column=0, columnspan=2, pady=10)
+        self.btn_start_nosave.grid(row=16, column=0, columnspan=2, pady=10)
 
         self.btn_start = tk.Button(scrollable_frame, text="Procesar y guardar", command=self.start_tracking, width=20, height=2)
-        self.btn_start.grid(row=13, column=2, columnspan=2, pady=10)
+        self.btn_start.grid(row=16, column=2, columnspan=2, pady=10)
 
         self.btn_abrir_salida = tk.Button(scrollable_frame, text="Abrir Carpeta", command=self.abrir_carpeta_salida)
-        self.btn_abrir_salida.grid(row=14, column=0, columnspan=4, pady=10)
+        self.btn_abrir_salida.grid(row=17, column=0, columnspan=4, pady=10)
 
+        # Logo inferior
         image2 = Image.open(resource_path("untrefLogo.jpg")).resize((250, 100))
         self.logo_img2 = ImageTk.PhotoImage(image2)
-        tk.Label(scrollable_frame, image=self.logo_img2).grid(row=15, column=0, columnspan=4, pady=10)
+        tk.Label(scrollable_frame, image=self.logo_img2).grid(row=18, column=0, columnspan=4, pady=10)
 
         self.on_mode_change()
 
@@ -241,14 +296,26 @@ class TrackerGUI(tk.Frame):
         output_folder = os.path.join(os.getcwd(), "output")
         os.makedirs(output_folder, exist_ok=True)
 
+        confianza = str(int(self.conf_threshold.get())/100)
+
         cmd = [
             "--out-base", out_base,
             "--fps", fps,
             "--resolution", resolution,
             "--gainX", self.gainX_entry.get(),
             "--gainY", self.gainY_entry.get(),
-            "--zoom", str(self.zoom_slider.get())
+            "--zoom", str(self.zoom_slider.get()),
+            "--conf-threshold", confianza,
+            "--max-lost-frames", self.max_lost_frames.get(),
+            "--servo-base-x", self.servo_base_x.get(),
+            "--servo-base-y", self.servo_base_y.get(),
+            "--keep-frames", self.keep_frames.get(),
+            "--yolo-model", self.yolo_model.get(),
         ]
+
+        lista = [confianza, self.gainX_entry.get()]
+        for elemento in lista:
+            print(type(elemento))
 
         if not save_output:
             cmd.append("--no-save")
@@ -300,6 +367,7 @@ class TrackerGUI(tk.Frame):
             except RuntimeError as e:
                 messagebox.showerror("Error en video", str(e))
             except Exception as e:
+                print(e)
                 messagebox.showerror("Error durante el procesamiento", str(e))
 
     def start_tracking_no_save(self):
@@ -311,6 +379,7 @@ class TrackerGUI(tk.Frame):
             except RuntimeError as e:
                 messagebox.showerror("Error en video", str(e))
             except Exception as e:
+                print(e)
                 messagebox.showerror("Error durante el procesamiento", str(e))
                 
     def analyze_csv(self):

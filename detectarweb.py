@@ -11,7 +11,7 @@ class HumanTracker:
         self.fps = args.fps
 
         # Base rotativa
-        self.baseX, self.baseY = 80, 100
+        self.baseX, self.baseY = args.servo_base_x , args.servo_base_y
         self.servoPos = [self.baseX, self.baseY]
         self.last_det_t = time.time()
         self.timeout = 5
@@ -23,7 +23,7 @@ class HumanTracker:
 
         # Modelo YOLO
         warnings.filterwarnings("ignore", message=".*autocast.*")
-        self.model = YOLO("yolov10n.pt")
+        self.model = YOLO(str(args.yolo_model) + ".pt")
 
         # Seguimiento
         self.cands = {}
@@ -33,6 +33,9 @@ class HumanTracker:
         self.persona_actual = None
         self.frames_perdido = 0
         self.log = []
+        self.confianza = args.conf_threshold
+        self.frames_perdidos_max = args.max_lost_frames
+        self.track_memory = {} 
 
         # Capturas y salidas
         self.cap = None
@@ -69,7 +72,6 @@ class HumanTracker:
         import csv
         from PIL import Image, ImageTk
         import tkinter as tk
-
 
         # Crear carpeta 'output' si no existe
         os.makedirs(self.output_dir, exist_ok=True)
@@ -257,7 +259,7 @@ class HumanTracker:
     
     # Función para detectar personas
     def detect(self, frame):
-        confianza = 0.4
+        confianza = self.confianza
         r = self.model.predict(frame, imgsz=640, conf=confianza, verbose=False)[0]
         outs = []
         for b in r.boxes:
@@ -340,8 +342,6 @@ class HumanTracker:
 
         cropped = frame[y1:y2, x1:x2]
         return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
-        cropped = frame[y1:y2, x1:x2]
-        return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
 
     def actualizar_frame(self):
@@ -371,7 +371,7 @@ class HumanTracker:
             else:
                 # Persona actual no detectada
                 self.frames_perdido += 1
-                if self.frames_perdido >= 2 and personas_detectadas:
+                if self.frames_perdido >= self.frames_perdidos_max and personas_detectadas:
                     # Buscar la persona más cercana al centro de la imagen
                     # Solo si se ha perdido la persona actual por más de 2 frames
                     centro_x = self.frame.shape[1] // 2
@@ -457,6 +457,13 @@ def main(args_list=None):
     parser.add_argument("--zoom", type=float, default=110.0, help="Zoom de la cámara")
     parser.add_argument("--no-save", action="store_true", help="No guardar archivos")
     parser.add_argument("--vidriera-mode", action="store_true", help="Modo depuración")
+    parser.add_argument("--conf-threshold", type=float, default=0.4)
+    parser.add_argument("--max-lost-frames", type=int, default=3)
+    parser.add_argument("--servo-base-x", type=int, default=80)
+    parser.add_argument("--servo-base-y", type=int, default=100)
+    parser.add_argument("--keep-frames", type=int, default=10)
+    parser.add_argument("--yolo-model", type=str, default="yolov10s")
+
     
     args = parser.parse_args(args_list)
 
