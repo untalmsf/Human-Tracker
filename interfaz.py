@@ -261,7 +261,6 @@ class TrackerGUI(tk.Frame):
             else:
                 messagebox.showerror("Error", "URL inválida o no compatible.\nSolo se admiten YouTube o EarthCam.")
                 return None
-         
         elif mode == "video":
             path = self.video_path.get().strip()
             if not path or not os.path.isfile(path):

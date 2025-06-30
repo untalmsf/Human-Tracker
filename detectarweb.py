@@ -210,7 +210,14 @@ class HumanTracker:
         except Exception as e:
             driver.quit()
             raise RuntimeError(f"No se pudo acceder a la página EarthCam: {e}")
+        try:
+            driver.get(url)
+            html = driver.page_source
+        except Exception as e:
+            driver.quit()
+            raise RuntimeError(f"No se pudo acceder a la página EarthCam: {e}")
 
+        driver.quit()
         driver.quit()
 
         matches = re.findall(r'https?://[^\s"\']+\.m3u8', html)
@@ -310,6 +317,8 @@ class HumanTracker:
 
         zoom_factor = zoom_pct / 100.0
         h, w = frame.shape[:2]
+        zoom_factor = zoom_pct / 100.0
+        h, w = frame.shape[:2]
 
         # Tamaño del recorte
         new_w = int(w / zoom_factor)
@@ -321,6 +330,8 @@ class HumanTracker:
         x2 = x1 + new_w
         y2 = y1 + new_h
 
+        cropped = frame[y1:y2, x1:x2]
+        return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
         cropped = frame[y1:y2, x1:x2]
         return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
