@@ -120,48 +120,55 @@ class TrackerGUI(tk.Frame):
         self.btn_browse = tk.Button(scrollable_frame, text="Buscar...", command=self.browse_video, state="disabled")
         self.btn_browse.grid(row=7, column=2)
         
-        # Opciones de salida
-        tk.Label(scrollable_frame, text="Funciones avanzadas", font=("Arial", 18)).grid(row=8, column=0, pady=5, sticky="w", columnspan=4)
+        # Botón [-]/[+] y título en la misma línea, pegado a la izquierda
+        self.btn_toggle = tk.Button(scrollable_frame, text="[-]", width=5, command=self.toggle_avanzado)
+        self.btn_toggle.grid(row=8, column=0,  padx=(0, 2))
+        tk.Label(scrollable_frame, text="Funciones avanzadas", font=("Arial", 18)).grid(row=8, column=1, columnspan=3, sticky="w", pady=5)
 
-        tk.Label(scrollable_frame, text="Nombre del video:").grid(row=9, column=0, sticky="e", pady=2)
-        self.out_base = tk.Entry(scrollable_frame, width=20)
+        # ⬇ Frame que se podrá ocultar 
+        self.avanzado_frame = tk.Frame(scrollable_frame)
+        self.avanzado_frame.grid(row=9, column=0, columnspan=4, sticky="w")
+
+        # --- Dentro de avanzado_frame ---
+        tk.Label(self.avanzado_frame, text="Nombre del video:").grid(row=0, column=0, sticky="e", pady=2)
+        self.out_base = tk.Entry(self.avanzado_frame, width=20)
         self.out_base.insert(0, "output")
-        self.out_base.grid(row=9, column=1, columnspan=2, sticky="w", pady=2)
+        self.out_base.grid(row=0, column=1, columnspan=2, sticky="w", pady=2)
 
-        tk.Label(scrollable_frame, text="Sencibilidad X:").grid(row=9, column=2, sticky="e", pady=2)
-        gainX = tk.StringVar(root)
+        tk.Label(self.avanzado_frame, text="Sencibilidad X:").grid(row=0, column=2, sticky="e", pady=2)
+        gainX = tk.StringVar(self.master)
         gainX.set("1.0")
-        self.gainX_entry = tk.Spinbox(scrollable_frame, width=10, from_=0, to=100, increment=0.001, format="%.3f", textvariable=gainX)
-        self.gainX_entry.grid(row=9, column=3, sticky="w", pady=2)
-        
-        tk.Label(scrollable_frame, text="FPS:").grid(row=10, column=0, sticky="e", pady=2)
-        fps = tk.StringVar(root)
+        self.gainX_entry = tk.Spinbox(self.avanzado_frame, width=10, from_=0, to=100, increment=0.001, format="%.3f", textvariable=gainX)
+        self.gainX_entry.grid(row=0, column=3, sticky="w", pady=2)
+
+        tk.Label(self.avanzado_frame, text="FPS:").grid(row=1, column=0, sticky="e", pady=2)
+        fps = tk.StringVar(self.master)
         fps.set("30")
-        self.fps_entry = tk.Spinbox(scrollable_frame, width=10, from_=0, to=100, textvariable=fps)
-        self.fps_entry.grid(row=10, column=1, sticky="w", pady=2)
+        self.fps_entry = tk.Spinbox(self.avanzado_frame, width=10, from_=0, to=100, textvariable=fps)
+        self.fps_entry.grid(row=1, column=1, sticky="w", pady=2)
 
-        tk.Label(scrollable_frame, text="Sencibilidad Y:").grid(row=10, column=2, sticky="e", pady=2)
-        gainY = tk.StringVar(root)
+        tk.Label(self.avanzado_frame, text="Sencibilidad Y:").grid(row=1, column=2, sticky="e", pady=2)
+        gainY = tk.StringVar(self.master)
         gainY.set("1.0")
-        self.gainY_entry = tk.Spinbox(scrollable_frame, width=10, from_=0.0, to=120.0, increment=0.001, format="%.3f", textvariable=gainY)
-        self.gainY_entry.grid(row=10, column=3, sticky="w", pady=2)
+        self.gainY_entry = tk.Spinbox(self.avanzado_frame, width=10, from_=0.0, to=120.0, increment=0.001, format="%.3f", textvariable=gainY)
+        self.gainY_entry.grid(row=1, column=3, sticky="w", pady=2)
 
-        tk.Label(scrollable_frame, text="Resolución:").grid(row=11, column=0, sticky="e", pady=2)
-        self.resolution_combo = ttk.Combobox(scrollable_frame, values=["640x480", "1280x720", "1800x900"], width=15)
+        tk.Label(self.avanzado_frame, text="Resolución:").grid(row=2, column=0, sticky="e", pady=2)
+        self.resolution_combo = ttk.Combobox(self.avanzado_frame, values=["640x480", "1280x720", "1800x900"], width=15)
         self.resolution_combo.set("640x480")
-        self.resolution_combo.grid(row=11, column=1, sticky="w", pady=2)
+        self.resolution_combo.grid(row=2, column=1, sticky="w", pady=2)
 
-        tk.Label(scrollable_frame, text="Zoom (%):").grid(row=11, column=2, sticky="e", pady=2)
-        zoom_value = tk.StringVar(root)
+        tk.Label(self.avanzado_frame, text="Zoom (%):").grid(row=2, column=2, sticky="e", pady=2)
+        zoom_value = tk.StringVar(self.master)
         zoom_value.set("100")  # 100% = sin zoom
-        self.zoom_slider = tk.Scale(scrollable_frame, from_=100, to=200, resolution=1, orient="horizontal", variable=zoom_value)
-        self.zoom_slider.grid(row=11, column=3)
+        self.zoom_slider = tk.Scale(self.avanzado_frame, from_=100, to=200, resolution=1, orient="horizontal", variable=zoom_value)
+        self.zoom_slider.grid(row=2, column=3)
 
         self.draw_boxes = tk.BooleanVar(value=True)
-        tk.Checkbutton(scrollable_frame, text="Recuadros de personas", variable=self.draw_boxes).grid(row=12, column=1, columnspan=3, sticky="w", pady=2)
+        tk.Checkbutton(self.avanzado_frame, text="Recuadros de personas", variable=self.draw_boxes).grid(row=3, column=1, columnspan=3, sticky="w", pady=2)
 
         self.vidriera_mode = tk.BooleanVar(value=False)
-        tk.Checkbutton(scrollable_frame, text="Modo Vidriera", variable=self.vidriera_mode).grid(row=12, column=3, sticky="w", pady=2)
+        tk.Checkbutton(self.avanzado_frame, text="Modo Vidriera", variable=self.vidriera_mode).grid(row=3, column=3, sticky="w", pady=2)
 
         # Botones de acción
         self.btn_start_nosave = tk.Button(scrollable_frame, text="Procesar sin guardar", command=self.start_tracking_no_save, width=20, height=2)
@@ -178,6 +185,19 @@ class TrackerGUI(tk.Frame):
         tk.Label(scrollable_frame, image=self.logo_img2).grid(row=15, column=0, columnspan=4, pady=10)
 
         self.on_mode_change()
+
+    # Variable para trackear si está expandido
+        self.avanzado_visible = True
+
+    def toggle_avanzado(self):
+        self.avanzado_visible = not self.avanzado_visible
+        if self.avanzado_visible:
+            self.avanzado_frame.grid()  # Mostrar
+            self.btn_toggle.config(text="[-]")
+        else:
+            self.avanzado_frame.grid_remove()  # Ocultar
+            self.btn_toggle.config(text="[+]")
+
 
     def on_mode_change(self):
         mode = self.input_mode.get()
