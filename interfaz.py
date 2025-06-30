@@ -206,7 +206,7 @@ class TrackerGUI(tk.Frame):
 
         self.keep_frames = tk.Spinbox(self.avanzado_frame, from_=0, to=100, width=10)
         self.keep_frames.delete(0, "end")
-        self.keep_frames.insert(0, "10")
+        self.keep_frames.insert(0, "3")
         self.keep_frames.grid(row=5, column=1, sticky="w", pady=2)
 
         # Modelo YOLO
@@ -374,8 +374,8 @@ class TrackerGUI(tk.Frame):
         cmd = self._build_cmd(save_output=False)
         if cmd:
             try:
-                detectarweb_main(cmd)  # Pasar lista completa de argumentos sin modificar
                 messagebox.showinfo("Ejecutando", "Procesamiento iniciado sin guardar salida.")
+                detectarweb_main(cmd)  # Pasar lista completa de argumentos sin modificar
             except RuntimeError as e:
                 messagebox.showerror("Error en video", str(e))
             except Exception as e:

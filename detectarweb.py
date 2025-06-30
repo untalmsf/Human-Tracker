@@ -360,7 +360,34 @@ class HumanTracker:
         vis = self.associate(self.detect(self.frame))
 
         # Seguimiento
-        personas_detectadas = [{"id": idv, "centro": (cx, cy)} for idv, (cx, cy), *_ in vis]
+        personas_detectadas = []
+        ids_actuales = set()
+
+        for idv, (cx, cy), x, y, w, h in vis:
+            personas_detectadas.append({"id": idv, "centro": (cx, cy)})
+            ids_actuales.add(idv)
+            self.track_memory[idv] = {"bbox": (x, y, x + w, y + h), "lost": 0}  # reset
+
+        # Incrementar "lost" para IDs no detectados
+        for track_id in list(self.track_memory.keys()):
+            if track_id not in ids_actuales:
+                if "lost" in self.track_memory[track_id]:
+                    self.track_memory[track_id]["lost"] += 1
+                else:
+                    self.track_memory[track_id]["lost"] = 1
+
+        frame_h, frame_w = self.frame.shape[:2]
+        nuevos_memoria = {}
+
+        for track_id, info in self.track_memory.items():
+            x1, y1, x2, y2 = info["bbox"]
+            lost = info["lost"]
+            borde = x1 <= 10 or y1 <= 10 or x2 >= frame_w - 10 or y2 >= frame_h - 10
+
+            if lost <= self.args.keep_frames and not borde:
+                nuevos_memoria[track_id] = info
+
+        self.track_memory = nuevos_memoria
 
         if self.id_actual is not None:
             ids_detectados = [p['id'] for p in personas_detectadas]
@@ -392,12 +419,13 @@ class HumanTracker:
             else:
                 # No hay personas detectadas
                 self.persona_actual = None
-
-        for idv, (cx, cy), x, y, w, h in vis:
-            color = (0, 255, 0) if self.persona_actual and idv == self.persona_actual['id'] else (255, 0, 0)
+        
+        for track_id, info in self.track_memory.items():
+            x1, y1, x2, y2 = info["bbox"]
+            color = (0, 255, 0) if self.persona_actual and track_id == self.persona_actual['id'] else (255, 0, 0)
             if not self.args.no_boxes:
-                cv2.rectangle(self.frame, (x, y), (x + w, y + h), color, 2)
-                cv2.putText(self.frame, f"ID:{idv}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.rectangle(self.frame, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(self.frame, f"ID:{track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         if self.persona_actual:
             self.last_det_t = time.time()
@@ -461,7 +489,7 @@ def main(args_list=None):
     parser.add_argument("--max-lost-frames", type=int, default=3)
     parser.add_argument("--servo-base-x", type=int, default=80)
     parser.add_argument("--servo-base-y", type=int, default=100)
-    parser.add_argument("--keep-frames", type=int, default=10)
+    parser.add_argument("--keep-frames", type=int, default=3)
     parser.add_argument("--yolo-model", type=str, default="yolov10s")
 
     
