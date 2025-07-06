@@ -13,7 +13,7 @@ def main(args_list=None):
     warnings.filterwarnings("ignore", message=".*autocast.*")
 
     # Parametros de la interfaz
-    parser = argparse.ArgumentParser(description="Person Tracker con YOLOv10 + click-selector")
+    parser = argparse.ArgumentParser(description="Person Tracker con YOLOv8 + click-selector")
     parser.add_argument("--camera", type=int)
     parser.add_argument("--camera-sec", type=int)
     parser.add_argument("--video")
@@ -31,6 +31,12 @@ def main(args_list=None):
     parser.add_argument("--zoom", type=float, default=110.0, help="Zoom de la cámara")
     parser.add_argument("--no-save", action="store_true", help="No guardar archivos")
     parser.add_argument("--vidriera-mode", action="store_true", help="Modo depuración")
+    parser.add_argument("--conf-threshold", type=float, default=0.4)
+    parser.add_argument("--max-lost-frames", type=int, default=3)
+    parser.add_argument("--servo-base-x", type=int, default=80)
+    parser.add_argument("--servo-base-y", type=int, default=100)
+    parser.add_argument("--keep-frames", type=int, default=1)
+    parser.add_argument("--yolo-model", type=str, default="yolov10n")
 
     args = parser.parse_args(args_list)
 
@@ -40,7 +46,7 @@ def main(args_list=None):
     fps = args.fps
 
     # Variables de la base rotativa
-    baseX, baseY = 80, 100
+    baseX, baseY = args.servo_base_x , args.servo_base_y
     servoPos = [baseX, baseY]
     last_det_t, timeout = time.time(), 5
 
@@ -150,16 +156,31 @@ def main(args_list=None):
     cap_sec = None
     if args.camera_doble and args.camera_sec is not None:
         cap_sec = cv2.VideoCapture(args.camera_sec)
+
+        if not cap_sec or not cap_sec.isOpened():
+                # Liberamos la cámara principal antes de lanzar el error
+                cap.release() 
+                cap_sec.release() 
+                try:
+                    board.exit()
+                except Exception as e:
+                    print(f"[ADVERTENCIA] Arduino no respondió correctamente al cerrar: {e}")
+                raise RuntimeError(f"No se pudo abrir la cámara secundaria en el índice: {args.camera_sec}. "
+                                     "Verifica el índice y que no esté en uso por otra aplicación.")
+        
         cap_sec.set(cv2.CAP_PROP_FRAME_WIDTH, res_w)
         cap_sec.set(cv2.CAP_PROP_FRAME_HEIGHT, res_h)
         cap_sec.set(cv2.CAP_PROP_FPS, fps)
+        if not cap_sec.isOpened():
+                raise RuntimeError(f"No se pudo abrir la cámara secundaria: {args.camera_sec}")
+
 
     fourcc = cv2.VideoWriter_fourcc(*"XVID")
     out = cv2.VideoWriter(vid_out, fourcc, fps, (res_w, res_h)) if vid_out else None
     out_sec = cv2.VideoWriter(vid_out_sec, fourcc, fps, (res_w, res_h)) if vid_out_sec and args.camera_sec else None
 
     # Variables del seguidor de personas
-    model = YOLO("yolov10n.pt")
+    model = YOLO(str(args.yolo_model) + ".pt")
     seguido_id, next_id = None, 0
     cands, log = {}, []
     UMBRAL = 50
@@ -183,7 +204,7 @@ def main(args_list=None):
 
     # Función para detectar personas
     def detect(frame):
-        confianza = 0.4
+        confianza = args.conf_threshold
         r = model.predict(frame, imgsz=640, conf=confianza, verbose=False)[0]
         outs=[]
         for b in r.boxes:
@@ -311,7 +332,7 @@ def main(args_list=None):
                 persona_actual = next(p for p in personas_detectadas if p['id'] == id_actual)
             else:
                 frames_perdido += 1
-                if frames_perdido >= 2 and personas_detectadas:
+                if frames_perdido >= args.max_lost_frames and personas_detectadas:
                     centro_pantalla_x = frame.shape[1] // 2
                     persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_pantalla_x))
                     id_actual = persona_actual['id']
@@ -390,8 +411,13 @@ def main(args_list=None):
     if csv_out:
         with open(csv_out,"w",newline="") as f:
             csv.writer(f).writerows([("frame","id","zona"),*log])
-    if cap_sec:  cap_sec.release()
-    if args.camera_doble: board.exit()
+    if cap_sec:
+        cap_sec.release()
+    if args.camera_doble and board:
+            try:
+                board.exit()
+            except Exception as e:
+                print(f"[ADVERTENCIA] Arduino no respondió correctamente al cerrar: {e}")
     print("Finalizado.")
 
     
