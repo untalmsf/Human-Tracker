@@ -94,6 +94,7 @@ class TrackerGUI(tk.Frame):
         self.label_com = tk.Label(scrollable_frame, text="Puerto COM:").grid(row=5, column=2, sticky="e")
         self.combo_com = ttk.Combobox(scrollable_frame, values=self.get_arduino_ports(), width=15)
         self.combo_com.grid(row=5, column=3, sticky="w")
+        self.combo_com.bind("<Button-1>", self.update_com_ports)
 
         # Parametros de video de youtube
         self.youtube_options = {
@@ -277,6 +278,10 @@ class TrackerGUI(tk.Frame):
         portsUsados =  [port.device for port in ports if "Arduino" in port.description or "CH340" in port.description or "ttyUSB" in port.device] or [port.device for port in ports]
         return portsUsados + [""]
     
+    def update_com_ports(self, event):
+        """Actualiza la lista de puertos COM en el Combobox."""
+        self.combo_com['values'] = self.get_arduino_ports()
+
     def _build_cmd(self, save_output=True):
         mode = self.input_mode.get()
         out_base = self.out_base.get().strip()
@@ -312,10 +317,6 @@ class TrackerGUI(tk.Frame):
             "--keep-frames", self.keep_frames.get(),
             "--yolo-model", self.yolo_model.get(),
         ]
-
-        lista = [confianza, self.gainX_entry.get()]
-        for elemento in lista:
-            print(type(elemento))
 
         if not save_output:
             cmd.append("--no-save")

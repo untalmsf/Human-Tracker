@@ -66,30 +66,20 @@ class HumanTracker:
         self.nombre_base = None
 
     def run(self):
-        import os
-        import cv2
-        import time
-        import csv
-        from PIL import Image, ImageTk
-        import tkinter as tk
+        import os, cv2, time, csv, numpy as np
 
-        # Crear carpeta 'output' si no existe
+        # Crear carpeta 'output'
         os.makedirs(self.output_dir, exist_ok=True)
-
-        # Construir ruta base de archivos dentro de 'output'
         self.base = os.path.join(self.output_dir, os.path.basename(self.args.out_base))
-
         self.nombre_base = os.path.splitext(os.path.basename(self.base))[0]
         vid_sec_base = os.path.join(self.output_dir, f"{self.nombre_base}_cam_sec")
 
         self.vid_out = self.unico(self.base, "avi") if not self.args.no_save else None
         self.vid_out_sec = self.unico(vid_sec_base, "avi") if self.args.camera_sec and not self.args.no_save else None
-
-        # Extraer nombre base sin extensión para usar en el CSV
         self.csv_base = os.path.join(self.output_dir, f"seguimiento_{self.nombre_base}")
         self.csv_out = self.unico(self.csv_base, "csv") if not self.args.no_save else None
 
-        # Inicialización de la placa Arduino y servos
+        # Inicializar Arduino
         if self.args.camera_doble:
             try:
                 from pyfirmata2 import Arduino
@@ -101,26 +91,37 @@ class HumanTracker:
                 self.servo_y.write(self.servoPos[1])
                 time.sleep(0.5)
             except Exception as e:
-                print("Error al inicializar servos:", e)
-                raise RuntimeError(f"No se pudo inicializar la placa Arduino en {self.args.com}. Asegúrate de que el puerto es correcto y la placa está conectada.") from e
+                raise RuntimeError(f"No se pudo inicializar la placa Arduino en {self.args.com}: {e}")
 
-        # Abrir fuente de video
+        # Fuente principal
         self.cap = self.abrir_fuente_principal()
         if not self.cap or not self.cap.isOpened():
-            raise RuntimeError("No se pudo abrir el stream o video. Asegúrate de que la fuente es válida y accesible.") from None
-            
-        
-        # Configuración de la captura de video
+            raise RuntimeError("No se pudo abrir el stream o video")
+
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.res_w)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.res_h)
         self.cap.set(cv2.CAP_PROP_FPS, self.fps)
 
         # Cámara secundaria
         if self.args.camera_doble and self.args.camera_sec is not None:
-            self.cap_sec = cv2.VideoCapture(self.args.camera_sec)
+            self.cap_sec = cv2.VideoCapture(self.args.camera_sec, cv2.CAP_MSMF)
+
+            if not self.cap_sec or not self.cap_sec.isOpened():
+                # Liberamos la cámara principal antes de lanzar el error
+                self.cap.release() 
+                self.cap_sec.release() 
+                try:
+                    self.board.exit()
+                except Exception as e:
+                    print(f"[ADVERTENCIA] Arduino no respondió correctamente al cerrar: {e}")
+                raise RuntimeError(f"No se pudo abrir la cámara secundaria en el índice: {self.args.camera_sec}. "
+                                     "Verifica el índice y que no esté en uso por otra aplicación.")
+
             self.cap_sec.set(cv2.CAP_PROP_FRAME_WIDTH, self.res_w)
             self.cap_sec.set(cv2.CAP_PROP_FRAME_HEIGHT, self.res_h)
             self.cap_sec.set(cv2.CAP_PROP_FPS, self.fps)
+            if not self.cap_sec.isOpened():
+                raise RuntimeError(f"No se pudo abrir la cámara secundaria: {self.args.camera_sec}")
 
         # Escritores
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
@@ -129,31 +130,100 @@ class HumanTracker:
         if self.vid_out_sec:
             self.out_sec = cv2.VideoWriter(self.vid_out_sec, fourcc, self.fps, (self.res_w, self.res_h))
 
-        # Tkinter GUI
-        self.root = tk.Toplevel()
-        self.root.title("Seguimiento de persona")
+        # Crear ventana y setear callback de click
+        cv2.namedWindow("Seguimiento de persona")
+        cv2.setMouseCallback("Seguimiento de persona", self.click_cv)
 
-        # Mantener ventana al frente
-        self.root.lift()
-        self.root.attributes('-topmost', True) 
-        self.root.after(1000, lambda: self.root.attributes('-topmost', False))
+        # Loop principal
+        while True:
+            if cv2.getWindowProperty("Seguimiento de persona", cv2.WND_PROP_VISIBLE) < 1:
+                break
 
-        # Maximizar ventana en Windows
-        self.root.state("zoomed") 
-        self.root.configure(bg="black")
+            ret, self.frame = self.cap.read()
+            if not ret:
+                break
 
-        # Canvas principal (cámara principal)
-        self.canvas = tk.Canvas(self.root, bg="black", highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.canvas.bind("<Button-1>", self.click_tkinter)
+            if self.frame.shape[1] != self.res_w or self.frame.shape[0] != self.res_h:
+                self.frame = cv2.resize(self.frame, (self.res_w, self.res_h))
 
-        if self.args.camera_doble and self.args.camera_sec is not None:
-            # Canvas secundario (cámara secundaria)
-            self.canvas_sec = tk.Canvas(self.root, width=640, height=480, bg="black", highlightthickness=2)
-            self.canvas_sec.place(relx=1.0, rely=1.0, anchor="se") # esquina inferior derecha
+            vis = self.associate(self.detect(self.frame))
+            personas_detectadas = []
+            ids_actuales = set()
 
-        self.actualizar_frame()
-        self.root.mainloop()
+            for idv, (cx, cy), x, y, w, h in vis:
+                personas_detectadas.append({"id": idv, "centro": (cx, cy)})
+                ids_actuales.add(idv)
+                self.track_memory[idv] = {"bbox": (x, y, x + w, y + h), "lost": 0}
+
+            for track_id in list(self.track_memory.keys()):
+                if track_id not in ids_actuales:
+                    self.track_memory[track_id]["lost"] = self.track_memory.get(track_id, {}).get("lost", 0) + 1
+
+            frame_w = self.res_w
+            nuevos_memoria = {}
+            for track_id, info in self.track_memory.items():
+                x1, y1, x2, y2 = info["bbox"]
+                lost = info["lost"]
+                borde = x1 <= 10 or y1 <= 10 or x2 >= frame_w - 10 or y2 >= self.res_h - 10
+                if lost <= self.args.keep_frames and not borde:
+                    nuevos_memoria[track_id] = info
+            self.track_memory = nuevos_memoria
+
+            if self.id_actual is not None:
+                ids_detectados = [p['id'] for p in personas_detectadas]
+                if self.id_actual in ids_detectados:
+                    self.frames_perdido = 0
+                    self.persona_actual = next(p for p in personas_detectadas if p['id'] == self.id_actual)
+                else:
+                    self.frames_perdido += 1
+                    if self.frames_perdido >= self.frames_perdidos_max and personas_detectadas:
+                        centro_x = self.res_w // 2
+                        self.persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_x))
+                        self.id_actual = self.persona_actual['id']
+                        self.frames_perdido = 0
+                    else:
+                        self.persona_actual = None
+            elif personas_detectadas:
+                centro_x = self.res_w // 2
+                self.persona_actual = min(personas_detectadas, key=lambda p: abs(p['centro'][0] - centro_x))
+                self.id_actual = self.persona_actual['id']
+                self.frames_perdido = 0
+
+            for track_id, info in self.track_memory.items():
+                x1, y1, x2, y2 = info["bbox"]
+                color = (0, 255, 0) if self.persona_actual and track_id == self.persona_actual['id'] else (255, 0, 0)
+                if not self.args.no_boxes:
+                    cv2.rectangle(self.frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(self.frame, f"ID:{track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            if self.persona_actual:
+                self.last_det_t = time.time()
+                cx, cy = self.persona_actual['centro']
+                zona = "General" if not self.args.vidriera_mode else self.etiquetas[min(cx // (self.res_w // 4), 3)]
+                self.log.append((int(self.cap.get(cv2.CAP_PROP_POS_FRAMES)), self.persona_actual['id'], zona))
+                if self.args.camera_doble:
+                    self.move_servos(cx, cy)
+
+            if self.args.camera_doble and time.time() - self.last_det_t > self.timeout:
+                self.servo_x.write(self.baseX)
+                self.servo_y.write(self.baseY)
+                self.servoPos = [self.baseX, self.baseY]
+
+            if self.out:
+                self.out.write(self.frame)
+
+            frame_combined = self.frame
+            if self.args.camera_doble and self.cap_sec:
+                ret2, self.frame2 = self.cap_sec.read()
+                if ret2:
+                    frame_zoom = self.zoom(self.frame2, self.args.zoom)
+                    if self.out_sec:
+                        self.out_sec.write(frame_zoom)
+                    frame_combined = np.vstack((self.frame, frame_zoom))
+
+            cv2.imshow("Seguimiento de persona", frame_combined)
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
 
         # Limpieza
         self.cap.release()
@@ -167,7 +237,10 @@ class HumanTracker:
         if self.cap_sec:
             self.cap_sec.release()
         if self.args.camera_doble and self.board:
-            self.board.exit()
+            try:
+                self.board.exit()
+            except Exception as e:
+                print(f"[ADVERTENCIA] Arduino no respondió correctamente al cerrar: {e}")
         cv2.destroyAllWindows()
         print("Finalizado.")
 
@@ -220,7 +293,6 @@ class HumanTracker:
             raise RuntimeError(f"No se pudo acceder a la página EarthCam: {e}")
 
         driver.quit()
-        driver.quit()
 
         matches = re.findall(r'https?://[^\s"\']+\.m3u8', html)
         if not matches:
@@ -256,7 +328,15 @@ class HumanTracker:
                 self.id_actual = i
                 print(f"Persona seleccionada: ID {self.id_actual}")
                 break
-    
+
+    def click_cv(self, event, x, y, flags, param):
+        import cv2
+        if event == cv2.EVENT_LBUTTONDOWN:
+            for i, (centro, x1, y1, w, h) in self.cands.items():
+                if x1 < x < x1 + w and y1 < y < y1 + h:
+                    self.id_actual = i
+                    break
+
     # Función para detectar personas
     def detect(self, frame):
         confianza = self.confianza
@@ -325,8 +405,6 @@ class HumanTracker:
         if zoom_pct <= 100:
             return frame  # sin zoom o reducción
 
-        zoom_factor = zoom_pct / 100.0
-        h, w = frame.shape[:2]
         zoom_factor = zoom_pct / 100.0
         h, w = frame.shape[:2]
 
