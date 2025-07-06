@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from serial.tools import list_ports
 import sys
 import platform
+from detectarweb import main as detectarweb_main
 
 def resource_path(relative_path):
     base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
@@ -169,11 +170,8 @@ class TrackerGUI(tk.Frame):
         self.btn_start = tk.Button(scrollable_frame, text="Procesar y guardar", command=self.start_tracking, width=20, height=2)
         self.btn_start.grid(row=13, column=2, columnspan=2, pady=10)
 
-        self.btn_analyze = tk.Button(scrollable_frame, text="Analizar CSV", command=self.analyze_csv)
-        self.btn_analyze.grid(row=14, column=0, columnspan=2, pady=10)
-
         self.btn_abrir_salida = tk.Button(scrollable_frame, text="Abrir Carpeta", command=self.abrir_carpeta_salida)
-        self.btn_abrir_salida.grid(row=14, column=2, columnspan=2, pady=10)
+        self.btn_abrir_salida.grid(row=14, column=0, columnspan=4, pady=10)
 
         image2 = Image.open(resource_path("untrefLogo.jpg")).resize((250, 100))
         self.logo_img2 = ImageTk.PhotoImage(image2)
@@ -222,17 +220,16 @@ class TrackerGUI(tk.Frame):
 
         output_folder = os.path.join(os.getcwd(), "output")
         os.makedirs(output_folder, exist_ok=True)
-        out_base_path = os.path.join(output_folder, out_base)
 
-        script_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
-        if ("Human Tracker.exe" in sys.executable) :
-            script = os.path.join(script_dir, "detectarweb.exe") # usamos el .exe directamente
-            cmd = [script, "--out-base", out_base, "--fps", fps, "--resolution", resolution,
-                     "--gainX", self.gainX_entry.get(), "--gainY", self.gainY_entry.get(), "--zoom", str(self.zoom_slider.get())]
-        else:
-            script = os.path.join(script_dir, "detectarweb.py") 
-            cmd = ["python", script, "--out-base", out_base, "--fps", fps, "--resolution", resolution,
-                     "--gainX", self.gainX_entry.get(), "--gainY", self.gainY_entry.get(), "--zoom", str(self.zoom_slider.get())]
+        cmd = [
+            "--out-base", out_base,
+            "--fps", fps,
+            "--resolution", resolution,
+            "--gainX", self.gainX_entry.get(),
+            "--gainY", self.gainY_entry.get(),
+            "--zoom", str(self.zoom_slider.get())
+        ]
+        
         if not save_output:
             cmd.append("--no-save")
 
@@ -245,10 +242,14 @@ class TrackerGUI(tk.Frame):
         port = self.combo_com.get().strip()
 
         if mode == "camera" and port:
-            cmd += ["--camera", self.cam_index.get(),"--camera-sec", self.cam_index_sec.get(),"--camera-doble", "--com", port]
+            cmd += ["--camera", self.cam_index.get(),
+                    "--camera-sec", self.cam_index_sec.get(),
+                    "--camera-doble", "--com", port]
+            
         elif mode == "camera":
             cmd += ["--camera", self.cam_index.get()]
             messagebox.showinfo("Camara", "No ha seleccionado un puerto COM.\nSe usará unicamente la cámara principal.")
+
         elif mode == "youtube":
             url = self.youtube_url.get().strip()
             if not url:
@@ -275,17 +276,21 @@ class TrackerGUI(tk.Frame):
     def start_tracking(self):
         cmd = self._build_cmd(save_output=True)
         if cmd:
-            proc = subprocess.Popen(cmd)
-            proc.wait()
+            try:
+                detectarweb_main(cmd)  # Pasar lista completa de argumentos sin modificar
+                messagebox.showinfo("Finalizado", "Procesamiento completado y guardado en /output.")
+            except Exception as e:
+                messagebox.showerror("Error durante el procesamiento", str(e))
 
-            messagebox.showinfo("Finalizado", "Procesamiento completado y guardado en /output.")
-            
     def start_tracking_no_save(self):
         cmd = self._build_cmd(save_output=False)
         if cmd:
-            subprocess.Popen(cmd)
-            messagebox.showinfo("Ejecutando", "Procesamiento iniciado sin guardar salida.")
-
+            try:
+                detectarweb_main(cmd)  # Pasar lista completa de argumentos sin modificar
+                messagebox.showinfo("Ejecutando", "Procesamiento iniciado sin guardar salida.")
+            except Exception as e:
+                messagebox.showerror("Error durante el procesamiento", str(e))
+                
     def analyze_csv(self):
         path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
         if path:
