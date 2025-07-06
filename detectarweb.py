@@ -196,17 +196,23 @@ def main(args_list=None):
     def associate(nuevos):
         nonlocal next_id, cands
         vis = []
+        usados = set()  # IDs ya asignados
+        
         for c,x,y,w,h in nuevos:
             best, dmin = None, 1e9
-            for i, (c_old, *_) in cands.items():
+            for i, (c_old, *_rest) in cands.items():
+                if i in usados:
+                    continue  # ya asignado
                 d = np.hypot(c[0] - c_old[0], c[1] - c_old[1])
                 if d < dmin and d < UMBRAL:
                     best, dmin = i, d
             if best is not None:
                 cands[best] = (c, x, y, w, h)
+                usados.add(best)
                 vis.append((best, c, x, y, w, h))
             else:
                 cands[next_id] = (c, x, y, w, h)
+                usados.add(next_id)
                 vis.append((next_id, c, x, y, w, h))
                 next_id += 1
         return vis
