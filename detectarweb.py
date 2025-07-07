@@ -35,7 +35,6 @@ def main(args_list=None):
     parser.add_argument("--max-lost-frames", type=int, default=3)
     parser.add_argument("--servo-base-x", type=int, default=80)
     parser.add_argument("--servo-base-y", type=int, default=100)
-    parser.add_argument("--keep-frames", type=int, default=1)
     parser.add_argument("--yolo-model", type=str, default="yolov10n")
 
     args = parser.parse_args(args_list)

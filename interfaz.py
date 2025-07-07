@@ -202,23 +202,13 @@ class TrackerGUI(tk.Frame):
         self.servo_base_y.insert(0, "100")
         self.servo_base_y.grid(row=4, column=3, sticky="w", pady=2)
 
-        # Frames para mantener el cuadrado
-        lbl_keep = tk.Label(self.avanzado_frame, text="Frames de retención:")
-        lbl_keep.grid(row=5, column=0, sticky="e", pady=2)
-
-        self.keep_frames = tk.Spinbox(self.avanzado_frame, from_=0, to=100, width=10)
-        self.keep_frames.delete(0, "end")
-        self.keep_frames.insert(0, "1")
-        self.keep_frames.grid(row=5, column=1, sticky="w", pady=2)
-
         # Modelo YOLO
         lbl_model = tk.Label(self.avanzado_frame, text="Modelo YOLO:")
-        lbl_model.grid(row=5, column=2, sticky="e", pady=2)
+        lbl_model.grid(row=5, column=0, sticky="e", pady=2)
 
         self.yolo_model = ttk.Combobox(self.avanzado_frame, values=["yolov8n", "yolov8s", "yolov8m", "yolov8l", "yolov8x","yolov10n", "yolov10s", "yolov10m", "yolov10l", "yolov10x"], width=15)
         self.yolo_model.set("yolov10n")
-        self.yolo_model.grid(row=5, column=3, sticky="w", pady=2)
-
+        self.yolo_model.grid(row=5, column=1, sticky="w", pady=2)
 
         self.draw_boxes = tk.BooleanVar(value=True)
         tk.Checkbutton(self.avanzado_frame, text="Recuadros de personas", variable=self.draw_boxes).grid(row=6, column=1, columnspan=3, sticky="w", pady=2)
@@ -315,7 +305,6 @@ class TrackerGUI(tk.Frame):
             "--max-lost-frames", self.max_lost_frames.get(),
             "--servo-base-x", self.servo_base_x.get(),
             "--servo-base-y", self.servo_base_y.get(),
-            "--keep-frames", self.keep_frames.get(),
             "--yolo-model", self.yolo_model.get(),
         ]
         
