@@ -188,6 +188,8 @@ def main(args_list=None):
     frames_perdido = 0
     etiquetas = ["Izquierda", "Centro-Izq", "Centro-Der", "Derecha"]
     frame, frame2 = None, None
+    track_memory = {}
+    keepframe = 1
 
     # Función para seleccion de persona con click
     def click_tkinter(event):
@@ -309,7 +311,7 @@ def main(args_list=None):
 
     # Bucle de actualización de frames
     def actualizar_frame():
-        nonlocal frame, frame2, last_det_t
+        nonlocal frame, frame2, last_det_t, track_memory, keepframe
 
         ret, frame = cap.read()
         if not ret:
@@ -322,8 +324,36 @@ def main(args_list=None):
         vis = associate(detect(frame))
 
         # Seguimiento
-        personas_detectadas = [{"id": idv, "centro": (cx, cy)} for idv, (cx, cy), *_ in vis]
+        personas_detectadas = []
         nonlocal id_actual, persona_actual, frames_perdido
+
+        ids_actuales = set()
+
+        for idv, (cx, cy), x, y, w, h in vis:
+            personas_detectadas.append({"id": idv, "centro": (cx, cy)})
+            ids_actuales.add(idv)
+            track_memory[idv] = {"bbox": (x, y, x + w, y + h), "lost": 0}  # reset
+
+        # Incrementar "lost" para IDs no detectados
+        for track_id in list(track_memory.keys()):
+            if track_id not in ids_actuales:
+                if "lost" in track_memory[track_id]:
+                    track_memory[track_id]["lost"] += 1
+                else:
+                    track_memory[track_id]["lost"] = 1
+
+        frame_h, frame_w = frame.shape[:2]
+        nuevos_memoria = {}
+
+        for track_id, info in track_memory.items():
+            x1, y1, x2, y2 = info["bbox"]
+            lost = info["lost"]
+            borde = x1 <= 10 or y1 <= 10 or x2 >= frame_w - 10 or y2 >= frame_h - 10
+
+            if lost <= keepframe and not borde:
+                nuevos_memoria[track_id] = info
+
+        track_memory = nuevos_memoria
 
         if id_actual is not None:
             if id_actual in [p['id'] for p in personas_detectadas]:
@@ -348,11 +378,12 @@ def main(args_list=None):
                 persona_actual = None
 
         # Dibujar cajas
-        for idv, (cx, cy), x, y, w, h in vis:
-            color = (0, 255, 0) if persona_actual and idv == persona_actual['id'] else (255, 0, 0)
+        for track_id, info in track_memory.items():
+            x1, y1, x2, y2 = info["bbox"]
+            color = (0, 255, 0) if persona_actual and track_id == persona_actual['id'] else (255, 0, 0)
             if not args.no_boxes:
-                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                cv2.putText(frame, f"ID:{idv}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(frame, f"ID:{track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         if persona_actual:
             last_det_t = time.time()
